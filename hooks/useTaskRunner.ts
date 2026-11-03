@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
+import { useI18n } from "@/lib/i18n/I18nProvider";
 import type { ProgressHandler } from "@/lib/pdf-utils";
 import { getErrorMessage } from "@/lib/utils";
 
@@ -15,15 +16,18 @@ export interface TaskState {
 
 const IDLE: TaskState = { status: "idle", progress: 0, message: "", error: null };
 
-/** Kapselt Status, Fortschritt und Fehlerbehandlung einer PDF-Operation. */
+/** Encapsulates status, progress and error handling of a PDF operation. */
 export function useTaskRunner() {
+  const { t } = useI18n();
+  const { starting, done } = t.workspace;
+  const fallbackError = t.common.unknownError;
   const [state, setState] = useState<TaskState>(IDLE);
   const runId = useRef(0);
 
   const run = useCallback(async <T>(task: (onProgress: ProgressHandler) => Promise<T>): Promise<T | undefined> => {
     runId.current += 1;
     const currentRun = runId.current;
-    setState({ status: "working", progress: 0, message: "Starte …", error: null });
+    setState({ status: "working", progress: 0, message: starting, error: null });
 
     const onProgress: ProgressHandler = (fraction, message) => {
       if (runId.current !== currentRun) return;
@@ -37,17 +41,17 @@ export function useTaskRunner() {
     try {
       const result = await task(onProgress);
       if (runId.current === currentRun) {
-        setState({ status: "done", progress: 1, message: "Fertig!", error: null });
+        setState({ status: "done", progress: 1, message: done, error: null });
       }
       return result;
     } catch (error) {
       if (runId.current === currentRun) {
         console.error(error);
-        setState({ status: "error", progress: 0, message: "", error: getErrorMessage(error) });
+        setState({ status: "error", progress: 0, message: "", error: getErrorMessage(error, fallbackError) });
       }
       return undefined;
     }
-  }, []);
+  }, [done, fallbackError, starting]);
 
   const reset = useCallback(() => {
     runId.current += 1;

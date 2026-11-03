@@ -3,8 +3,8 @@
 import { useEffect } from "react";
 
 /**
- * Verhindert, dass der Browser eine versehentlich neben die Dropzone gezogene Datei öffnet
- * und damit die Seite (samt aktueller Arbeit) verlässt.
+ * Prevents the browser from opening a file that was accidentally dropped next to the dropzone,
+ * which would leave the page (and lose the current work).
  */
 export function FileDropGuard() {
   useEffect(() => {

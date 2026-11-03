@@ -1,15 +1,16 @@
 import { cn } from "@/lib/utils";
 
 interface ProgressBarProps {
-  /** Wert zwischen 0 und 1. */
+  /** Value between 0 and 1. */
   value: number;
   label?: string;
+  ariaLabel?: string;
   showPercent?: boolean;
   tone?: "indigo" | "emerald";
   className?: string;
 }
 
-export function ProgressBar({ value, label, showPercent = true, tone = "indigo", className }: ProgressBarProps) {
+export function ProgressBar({ value, label, ariaLabel, showPercent = true, tone = "indigo", className }: ProgressBarProps) {
   const percent = Math.round(Math.min(1, Math.max(0, value)) * 100);
   return (
     <div className={cn("w-full", className)}>
@@ -27,7 +28,7 @@ export function ProgressBar({ value, label, showPercent = true, tone = "indigo",
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={percent}
-        aria-label={label ?? "Fortschritt"}
+        aria-label={label ?? ariaLabel ?? "Progress"}
       >
         <div
           className={cn(

@@ -21,6 +21,7 @@ import {
 import { useDragReorder } from "@/hooks/useDragReorder";
 import { usePdfThumbnails } from "@/hooks/usePdfThumbnails";
 import { useTaskRunner } from "@/hooks/useTaskRunner";
+import { useI18n } from "@/lib/i18n/I18nProvider";
 import { bytesToBlob, normalizeRotation, organizePdf } from "@/lib/pdf-utils";
 import { buildOutputFileName, moveItem, stripExtension } from "@/lib/utils";
 
@@ -29,7 +30,7 @@ const PDF_ACCEPT = ["application/pdf", ".pdf"] as const;
 interface OrganizePage {
   key: string;
   sourceIndex: number;
-  /** Kumulierte Drehung – wird erst beim Export normalisiert. */
+  /** Accumulated rotation – only normalized on export. */
   rotation: number;
   deleted: boolean;
 }
@@ -44,6 +45,7 @@ function createPages(count: number): OrganizePage[] {
 }
 
 export function OrganizeTool() {
+  const { t } = useI18n();
   const [file, setFile] = useState<File | null>(null);
   const [pages, setPages] = useState<OrganizePage[]>([]);
   const [outputName, setOutputName] = useState("");
@@ -61,11 +63,11 @@ export function OrganizeTool() {
       const next = files[0];
       if (!next) return;
       setFile(next);
-      setOutputName(`${stripExtension(next.name)}-bearbeitet`);
+      setOutputName(`${stripExtension(next.name)}-${t.organize.editedSuffix}`);
       setResult(null);
       resetTask();
     },
-    [resetTask],
+    [resetTask, t],
   );
 
   const reset = () => {
@@ -118,8 +120,8 @@ export function OrganizeTool() {
     if (bytes) {
       setResult({
         blob: bytesToBlob(bytes),
-        fileName: buildOutputFileName(outputName, "bearbeitet", "pdf"),
-        details: `${instructions.length} ${instructions.length === 1 ? "Seite" : "Seiten"}`,
+        fileName: buildOutputFileName(outputName, t.organize.editedSuffix, "pdf"),
+        details: t.common.pages(instructions.length),
       });
     }
   };
@@ -129,9 +131,9 @@ export function OrganizeTool() {
       <Dropzone
         accept={PDF_ACCEPT}
         onFiles={loadFile}
-        title="PDF zum Organisieren auswählen"
-        description="oder hierher ziehen · Seiten danach drehen, löschen und neu anordnen"
-        buttonLabel="PDF auswählen"
+        title={t.organize.dropTitle}
+        description={t.organize.dropDescription}
+        buttonLabel={t.organize.dropButton}
       />
     );
   }
@@ -148,17 +150,17 @@ export function OrganizeTool() {
             onReplace={reset}
           />
           {thumbs.error ? (
-            <Alert tone="error" title="PDF konnte nicht geladen werden">
+            <Alert tone="error" title={t.workspace.loadErrorTitle}>
               {thumbs.error}
             </Alert>
           ) : (
             <>
               <MainToolbar>
                 <Button variant="ghost" size="sm" icon={<RotateCcw className="size-4" aria-hidden="true" />} onClick={() => rotateAll(-90)}>
-                  Alle links drehen
+                  {t.organize.rotateAllLeft}
                 </Button>
                 <Button variant="ghost" size="sm" icon={<RotateCw className="size-4" aria-hidden="true" />} onClick={() => rotateAll(90)}>
-                  Alle rechts drehen
+                  {t.organize.rotateAllRight}
                 </Button>
                 <Button
                   variant="ghost"
@@ -168,17 +170,17 @@ export function OrganizeTool() {
                   disabled={!hasChanges}
                   onClick={() => updatePages(() => createPages(thumbs.pageCount))}
                 >
-                  Alles zurücksetzen
+                  {t.organize.resetAll}
                 </Button>
               </MainToolbar>
               <p className="mb-3 text-sm text-slate-500 dark:text-slate-400">
-                Fahre über eine Seite, um sie zu drehen oder zu löschen. Ziehe Seiten, um die Reihenfolge zu ändern.
+                {t.organize.hint}
               </p>
               <ol className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
                 {pages.map((page, position) => (
                   <li key={page.key}>
                     <PageCard
-                      label={`Seite ${page.sourceIndex + 1}`}
+                      label={t.workspace.pageLabel(page.sourceIndex + 1)}
                       badge={position + 1}
                       thumbnail={thumbs.thumbnails[page.sourceIndex]}
                       rotation={page.rotation}
@@ -189,24 +191,24 @@ export function OrganizeTool() {
                       overlay={
                         page.deleted ? (
                           <span className="absolute inset-x-2 top-1/2 -translate-y-1/2 rounded-lg bg-rose-600/90 px-2 py-1 text-center text-xs font-bold text-white">
-                            Wird entfernt
+                            {t.organize.willBeRemoved}
                           </span>
                         ) : null
                       }
                       actions={
                         page.deleted ? (
-                          <IconButton label={`Seite ${page.sourceIndex + 1} wiederherstellen`} tone="success" onClick={() => toggleDelete(page.key)}>
+                          <IconButton label={t.organize.restorePage(page.sourceIndex + 1)} tone="success" onClick={() => toggleDelete(page.key)}>
                             <Undo2 className="size-4" aria-hidden="true" />
                           </IconButton>
                         ) : (
                           <>
-                            <IconButton label={`Seite ${page.sourceIndex + 1} nach links drehen`} onClick={() => rotatePage(page.key, -90)}>
+                            <IconButton label={t.organize.rotateLeftPage(page.sourceIndex + 1)} onClick={() => rotatePage(page.key, -90)}>
                               <RotateCcw className="size-4" aria-hidden="true" />
                             </IconButton>
-                            <IconButton label={`Seite ${page.sourceIndex + 1} nach rechts drehen`} onClick={() => rotatePage(page.key, 90)}>
+                            <IconButton label={t.organize.rotateRightPage(page.sourceIndex + 1)} onClick={() => rotatePage(page.key, 90)}>
                               <RotateCw className="size-4" aria-hidden="true" />
                             </IconButton>
-                            <IconButton label={`Seite ${page.sourceIndex + 1} löschen`} tone="danger" onClick={() => toggleDelete(page.key)}>
+                            <IconButton label={t.organize.deletePage(page.sourceIndex + 1)} tone="danger" onClick={() => toggleDelete(page.key)}>
                               <Trash2 className="size-4" aria-hidden="true" />
                             </IconButton>
                           </>
@@ -215,7 +217,7 @@ export function OrganizeTool() {
                       footer={
                         <span className="flex gap-1">
                           <IconButton
-                            label="Nach vorne verschieben"
+                            label={t.workspace.moveEarlier}
                             className="size-6"
                             disabled={position === 0}
                             onClick={() => movePage(position, position - 1)}
@@ -223,7 +225,7 @@ export function OrganizeTool() {
                             <ArrowLeft className="size-3.5" aria-hidden="true" />
                           </IconButton>
                           <IconButton
-                            label="Nach hinten verschieben"
+                            label={t.workspace.moveLater}
                             className="size-6"
                             disabled={position === pages.length - 1}
                             onClick={() => movePage(position, position + 1)}
@@ -242,14 +244,14 @@ export function OrganizeTool() {
       }
       sidebar={
         result ? (
-          <ResultPanel result={result} onReset={reset} resetLabel="Andere PDF bearbeiten" />
+          <ResultPanel result={result} onReset={reset} resetLabel={t.organize.resetLabel} />
         ) : (
-          <PanelCard title="Änderungen">
+          <PanelCard title={t.organize.panelTitle}>
             <div className="space-y-2 rounded-xl bg-slate-50 p-3 dark:bg-slate-800/50">
-              <StatLine label="Seiten im Ergebnis" value={`${stats.remaining} / ${pages.length}`} />
-              <StatLine label="Gedreht" value={stats.rotated} />
-              <StatLine label="Gelöscht" value={stats.deleted} />
-              <StatLine label="Reihenfolge geändert" value={stats.reordered ? "Ja" : "Nein"} />
+              <StatLine label={t.organize.statRemaining} value={`${stats.remaining} / ${pages.length}`} />
+              <StatLine label={t.organize.statRotated} value={stats.rotated} />
+              <StatLine label={t.organize.statDeleted} value={stats.deleted} />
+              <StatLine label={t.organize.statReordered} value={stats.reordered ? t.common.yes : t.common.no} />
             </div>
             {stats.deleted > 0 && (
               <Button
@@ -259,12 +261,12 @@ export function OrganizeTool() {
                 icon={<Undo2 className="size-4" aria-hidden="true" />}
                 onClick={() => updatePages((current) => current.map((page) => ({ ...page, deleted: false })))}
               >
-                Gelöschte Seiten wiederherstellen
+                {t.organize.restoreDeleted}
               </Button>
             )}
             <FileNameInput value={outputName} onChange={setOutputName} extension="pdf" />
             {stats.remaining === 0 && pages.length > 0 && (
-              <Alert tone="warning">Mindestens eine Seite muss erhalten bleiben.</Alert>
+              <Alert tone="warning">{t.organize.needOne}</Alert>
             )}
             <TaskFeedback task={task} />
             <Button
@@ -275,7 +277,7 @@ export function OrganizeTool() {
               icon={<Save className="size-5" aria-hidden="true" />}
               onClick={handleSave}
             >
-              {task.isWorking ? "Wird gespeichert …" : "Änderungen anwenden"}
+              {task.isWorking ? t.organize.working : t.organize.button}
             </Button>
           </PanelCard>
         )

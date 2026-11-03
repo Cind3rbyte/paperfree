@@ -18,6 +18,7 @@ import {
 } from "@/components/tools/ToolLayout";
 import { useDragReorder } from "@/hooks/useDragReorder";
 import { useTaskRunner } from "@/hooks/useTaskRunner";
+import { useI18n } from "@/lib/i18n/I18nProvider";
 import {
   bytesToBlob,
   imagesToPdf,
@@ -35,30 +36,21 @@ interface ImageItem {
   rotation: number;
 }
 
-const PAGE_SIZE_OPTIONS = [
-  { value: "a4", label: "A4" },
-  { value: "letter", label: "US Letter" },
-  { value: "fit", label: "Bildgröße" },
-] as const;
-
-const ORIENTATION_OPTIONS = [
-  { value: "auto", label: "Automatisch" },
-  { value: "portrait", label: "Hochformat" },
-  { value: "landscape", label: "Querformat" },
-] as const;
-
-const MARGIN_OPTIONS = [
-  { value: "none", label: "Kein Rand" },
-  { value: "small", label: "Schmal" },
-  { value: "large", label: "Breit" },
-] as const;
+const PAGE_SIZES: readonly ImagePageSize[] = ["a4", "letter", "fit"];
+const ORIENTATIONS: readonly ImageOrientation[] = ["auto", "portrait", "landscape"];
+const MARGINS: readonly ImageMargin[] = ["none", "small", "large"];
 
 export function ImagesToPdfTool() {
+  const { locale, t } = useI18n();
+  const pageSizeOptions = PAGE_SIZES.map((value) => ({ value, label: t.imagesToPdf.pageSizes[value] }));
+  const orientationOptions = ORIENTATIONS.map((value) => ({ value, label: t.imagesToPdf.orientations[value] }));
+  const marginOptions = MARGINS.map((value) => ({ value, label: t.imagesToPdf.margins[value] }));
+  const defaultName = t.imagesToPdf.defaultName;
   const [items, setItems] = useState<ImageItem[]>([]);
   const [pageSize, setPageSize] = useState<ImagePageSize>("a4");
   const [orientation, setOrientation] = useState<ImageOrientation>("auto");
   const [margin, setMargin] = useState<ImageMargin>("small");
-  const [outputName, setOutputName] = useState("bilder");
+  const [outputName, setOutputName] = useState(defaultName);
   const [result, setResult] = useState<ResultFile | null>(null);
   const task = useTaskRunner();
   const { reset: resetTask } = task;
@@ -80,11 +72,11 @@ export function ImagesToPdfTool() {
         return { id: createId(), file, url, rotation: 0 };
       });
       setItems((current) => [...current, ...added]);
-      setOutputName((current) => (current === "bilder" && added[0] ? stripExtension(added[0].file.name) : current));
+      setOutputName((current) => (current === defaultName && added[0] ? stripExtension(added[0].file.name) : current));
       setResult(null);
       resetTask();
     },
-    [resetTask],
+    [defaultName, resetTask],
   );
 
   const change = useCallback((updater: (current: ImageItem[]) => ImageItem[]) => {
@@ -112,7 +104,7 @@ export function ImagesToPdfTool() {
     for (const url of urls.current) URL.revokeObjectURL(url);
     urls.current.clear();
     setItems([]);
-    setOutputName("bilder");
+    setOutputName(defaultName);
     setResult(null);
     resetTask();
   };
@@ -131,8 +123,8 @@ export function ImagesToPdfTool() {
     if (bytes) {
       setResult({
         blob: bytesToBlob(bytes),
-        fileName: buildOutputFileName(outputName, "bilder", "pdf"),
-        details: `${items.length} ${items.length === 1 ? "Bild" : "Bilder"} → ${items.length} ${items.length === 1 ? "Seite" : "Seiten"}`,
+        fileName: buildOutputFileName(outputName, defaultName, "pdf"),
+        details: t.imagesToPdf.details(items.length),
       });
     }
   };
@@ -143,9 +135,9 @@ export function ImagesToPdfTool() {
         accept={SUPPORTED_IMAGE_TYPES}
         multiple
         onFiles={addFiles}
-        title="Bilder auswählen"
-        description="oder hierher ziehen · PNG, JPG, WebP (auch GIF, BMP, AVIF)"
-        buttonLabel="Bilder auswählen"
+        title={t.imagesToPdf.dropTitle}
+        description={t.imagesToPdf.dropDescription}
+        buttonLabel={t.imagesToPdf.dropButton}
         icon={<ImagePlus className="size-7" aria-hidden="true" />}
       />
     );
@@ -157,7 +149,7 @@ export function ImagesToPdfTool() {
         <div>
           <MainToolbar>
             <span className="px-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
-              {items.length} {items.length === 1 ? "Bild" : "Bilder"}
+              {t.common.images(items.length)}
             </span>
             <Button
               variant="ghost"
@@ -165,10 +157,10 @@ export function ImagesToPdfTool() {
               icon={<ArrowDownAZ className="size-4" aria-hidden="true" />}
               onClick={() => change((current) => current.slice().sort((a, b) => naturalCollator.compare(a.file.name, b.file.name)))}
             >
-              Nach Name sortieren
+              {t.workspace.sortByName}
             </Button>
             <Button variant="ghost" size="sm" className="ml-auto" icon={<Trash2 className="size-4" aria-hidden="true" />} onClick={clearAll}>
-              Alle entfernen
+              {t.workspace.removeAll}
             </Button>
           </MainToolbar>
 
@@ -198,13 +190,13 @@ export function ImagesToPdfTool() {
                   <span className="absolute left-2 top-2 rounded-md bg-slate-900/80 px-1.5 py-0.5 text-xs font-bold text-white">{index + 1}</span>
                 </div>
                 <div className="absolute right-3 top-3 flex flex-col gap-1 opacity-100 transition sm:opacity-0 sm:group-focus-within:opacity-100 sm:group-hover:opacity-100">
-                  <IconButton label="Nach links drehen" onClick={() => rotateItem(item.id, -90)}>
+                  <IconButton label={t.workspace.rotateLeft} onClick={() => rotateItem(item.id, -90)}>
                     <RotateCcw className="size-4" aria-hidden="true" />
                   </IconButton>
-                  <IconButton label="Nach rechts drehen" onClick={() => rotateItem(item.id, 90)}>
+                  <IconButton label={t.workspace.rotateRight} onClick={() => rotateItem(item.id, 90)}>
                     <RotateCw className="size-4" aria-hidden="true" />
                   </IconButton>
-                  <IconButton label={`„${item.file.name}“ entfernen`} tone="danger" onClick={() => removeItem(item.id)}>
+                  <IconButton label={t.workspace.remove(item.file.name)} tone="danger" onClick={() => removeItem(item.id)}>
                     <X className="size-4" aria-hidden="true" />
                   </IconButton>
                 </div>
@@ -213,14 +205,14 @@ export function ImagesToPdfTool() {
                     <p className="truncate text-xs font-semibold text-slate-700 dark:text-slate-200" title={item.file.name}>
                       {item.file.name}
                     </p>
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400">{formatBytes(item.file.size)}</p>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">{formatBytes(item.file.size, locale)}</p>
                   </div>
                   <span className="flex shrink-0 gap-1">
-                    <IconButton label="Nach vorne verschieben" className="size-6" disabled={index === 0} onClick={() => moveEntry(index, index - 1)}>
+                    <IconButton label={t.workspace.moveEarlier} className="size-6" disabled={index === 0} onClick={() => moveEntry(index, index - 1)}>
                       <ArrowLeft className="size-3.5" aria-hidden="true" />
                     </IconButton>
                     <IconButton
-                      label="Nach hinten verschieben"
+                      label={t.workspace.moveLater}
                       className="size-6"
                       disabled={index === items.length - 1}
                       onClick={() => moveEntry(index, index + 1)}
@@ -238,8 +230,8 @@ export function ImagesToPdfTool() {
                 multiple
                 compact
                 onFiles={addFiles}
-                title="Mehr Bilder"
-                description="Klicken oder ziehen"
+                title={t.imagesToPdf.moreTitle}
+                description={t.imagesToPdf.moreDescription}
                 icon={<Plus className="size-5" aria-hidden="true" />}
               />
             </li>
@@ -248,22 +240,22 @@ export function ImagesToPdfTool() {
       }
       sidebar={
         result ? (
-          <ResultPanel result={result} onReset={clearAll} resetLabel="Neue Bilder umwandeln" />
+          <ResultPanel result={result} onReset={clearAll} resetLabel={t.imagesToPdf.resetLabel} />
         ) : (
-          <PanelCard title="PDF-Einstellungen">
-            <SegmentedControl label="Seitengröße" value={pageSize} options={PAGE_SIZE_OPTIONS} onChange={setPageSize} />
+          <PanelCard title={t.imagesToPdf.panelTitle}>
+            <SegmentedControl label={t.imagesToPdf.pageSizeLabel} value={pageSize} options={pageSizeOptions} onChange={setPageSize} />
             <SegmentedControl
-              label="Ausrichtung"
+              label={t.imagesToPdf.orientationLabel}
               value={orientation}
-              options={ORIENTATION_OPTIONS}
+              options={orientationOptions}
               onChange={setOrientation}
               disabled={pageSize === "fit"}
             />
-            <SegmentedControl label="Seitenrand" value={margin} options={MARGIN_OPTIONS} onChange={setMargin} />
+            <SegmentedControl label={t.imagesToPdf.marginLabel} value={margin} options={marginOptions} onChange={setMargin} />
             <FileNameInput value={outputName} onChange={setOutputName} extension="pdf" />
             <div className="space-y-2 rounded-xl bg-slate-50 p-3 dark:bg-slate-800/50">
-              <StatLine label="Seiten" value={items.length} />
-              <StatLine label="Bildgröße gesamt" value={formatBytes(totalSize)} />
+              <StatLine label={t.imagesToPdf.statPages} value={items.length} />
+              <StatLine label={t.imagesToPdf.statSize} value={formatBytes(totalSize, locale)} />
             </div>
             <TaskFeedback task={task} />
             <Button
@@ -274,7 +266,7 @@ export function ImagesToPdfTool() {
               icon={<FileDown className="size-5" aria-hidden="true" />}
               onClick={handleConvert}
             >
-              {task.isWorking ? "PDF wird erstellt …" : "PDF erstellen"}
+              {task.isWorking ? t.imagesToPdf.working : t.imagesToPdf.button}
             </Button>
           </PanelCard>
         )

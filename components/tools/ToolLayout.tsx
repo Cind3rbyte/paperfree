@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import type { TaskState } from "@/hooks/useTaskRunner";
+import { useI18n } from "@/lib/i18n/I18nProvider";
 import { cn, downloadBlob, formatBytes } from "@/lib/utils";
 
 export interface ResultFile {
@@ -16,7 +17,7 @@ export interface ResultFile {
   details?: string;
 }
 
-/** Zweispaltiges Layout: Arbeitsfläche links, Optionen & Aktion rechts (auf Mobilgeräten untereinander). */
+/** Two-column layout: workspace on the left, options & action on the right (stacked on mobile). */
 export function Workspace({ main, sidebar }: { main: ReactNode; sidebar: ReactNode }) {
   return (
     <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
@@ -44,12 +45,13 @@ export function MainToolbar({ children }: { children: ReactNode }) {
 }
 
 export function TaskFeedback({ task }: { task: Pick<TaskState, "status" | "progress" | "message" | "error"> }) {
+  const { t } = useI18n();
   if (task.status === "working") {
     return <ProgressBar value={task.progress} label={task.message} />;
   }
   if (task.status === "error" && task.error) {
     return (
-      <Alert tone="error" title="Das hat leider nicht geklappt">
+      <Alert tone="error" title={t.workspace.errorTitle}>
         {task.error}
       </Alert>
     );
@@ -61,16 +63,17 @@ export function FileNameInput({
   value,
   onChange,
   extension,
-  label = "Dateiname",
+  label,
 }: {
   value: string;
   onChange: (value: string) => void;
   extension: string;
   label?: string;
 }) {
+  const { t } = useI18n();
   return (
     <label className="block space-y-2">
-      <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">{label}</span>
+      <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">{label ?? t.workspace.fileName}</span>
       <span className="flex items-center overflow-hidden rounded-xl border border-slate-200 bg-white focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-950">
         <input
           type="text"
@@ -90,23 +93,24 @@ export function FileNameInput({
 export function ResultPanel({
   result,
   onReset,
-  resetLabel = "Neue Datei bearbeiten",
+  resetLabel,
   children,
 }: {
   result: ResultFile;
   onReset: () => void;
-  resetLabel?: string;
+  resetLabel: string;
   children?: ReactNode;
 }) {
+  const { locale, t } = useI18n();
   return (
     <Card className="overflow-hidden border-emerald-200 dark:border-emerald-500/30">
       <div className="bg-gradient-to-br from-emerald-50 to-teal-50 p-5 dark:from-emerald-500/10 dark:to-teal-500/5">
         <div className="flex items-start gap-3">
           <CircleCheck className="mt-0.5 size-6 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
           <div className="min-w-0">
-            <p className="font-bold text-slate-900 dark:text-white">Fertig! Deine Datei ist bereit.</p>
+            <p className="font-bold text-slate-900 dark:text-white">{t.workspace.resultTitle}</p>
             <p className="mt-0.5 truncate text-sm text-slate-600 dark:text-slate-300" title={result.fileName}>
-              {result.fileName} · {formatBytes(result.blob.size)}
+              {result.fileName} · {formatBytes(result.blob.size, locale)}
             </p>
             {result.details && <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{result.details}</p>}
           </div>
@@ -120,7 +124,7 @@ export function ResultPanel({
             icon={<Download className="size-5" aria-hidden="true" />}
             onClick={() => downloadBlob(result.blob, result.fileName)}
           >
-            Herunterladen
+            {t.workspace.download}
           </Button>
           <Button variant="secondary" fullWidth icon={<RefreshCcw className="size-4" aria-hidden="true" />} onClick={onReset}>
             {resetLabel}
@@ -128,8 +132,8 @@ export function ResultPanel({
         </div>
       </div>
       <div className="flex flex-col items-center gap-3 border-t border-emerald-100 p-4 text-center dark:border-emerald-500/20">
-        <p className="text-xs text-slate-600 dark:text-slate-400">Hat dir PaperFree geholfen? Ein Kaffee hält das Projekt kostenlos.</p>
-        <KofiButton size="sm" />
+        <p className="text-xs text-slate-600 dark:text-slate-400">{t.workspace.kofiAsk}</p>
+        <KofiButton locale={locale} size="sm" />
       </div>
     </Card>
   );
@@ -198,6 +202,7 @@ export function LoadedFileBar({
   loading: boolean;
   onReplace: () => void;
 }) {
+  const { locale, t } = useI18n();
   return (
     <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900/70">
       <div className="flex flex-wrap items-center gap-3">
@@ -209,19 +214,19 @@ export function LoadedFileBar({
             {file.name}
           </p>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            {formatBytes(file.size)}
-            {pageCount > 0 && ` · ${pageCount} ${pageCount === 1 ? "Seite" : "Seiten"}`}
+            {formatBytes(file.size, locale)}
+            {pageCount > 0 && ` · ${t.common.pages(pageCount)}`}
           </p>
         </div>
         <Button variant="secondary" size="sm" icon={<RefreshCcw className="size-3.5" aria-hidden="true" />} onClick={onReplace}>
-          Andere Datei
+          {t.workspace.replaceFile}
         </Button>
       </div>
       {loading && pageCount > 0 && (
         <ProgressBar
           className="mt-3"
           value={rendered / pageCount}
-          label={`Erzeuge Vorschau … ${rendered} von ${pageCount} Seiten`}
+          label={t.workspace.previewProgress(rendered, pageCount)}
         />
       )}
     </div>

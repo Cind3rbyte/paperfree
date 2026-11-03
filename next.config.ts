@@ -3,9 +3,9 @@ import type { NextConfig } from "next";
 const isProduction = process.env.NODE_ENV === "production";
 
 /**
- * Die Content-Security-Policy erzwingt technisch, was PaperFree verspricht:
- * `connect-src 'self'` verhindert, dass die Seite Daten an fremde Server senden kann.
- * Im Entwicklungsmodus wird sie weggelassen, weil Hot-Reloading `eval` und WebSockets benötigt.
+ * The Content Security Policy technically enforces PaperFree's promise:
+ * `connect-src 'self'` prevents the page from sending data to any third-party server.
+ * It's omitted in development because hot reloading needs `eval` and WebSockets.
  */
 const contentSecurityPolicy = [
   "default-src 'self'",

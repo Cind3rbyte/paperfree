@@ -1,12 +1,16 @@
+import type { Locale } from "@/lib/i18n/config";
+import { getDictionary } from "@/lib/i18n/dictionaries";
 import { cn } from "@/lib/utils";
 
 interface PrivacyBadgeProps {
+  locale: Locale;
   size?: "sm" | "lg";
   className?: string;
 }
 
-/** Das zentrale Versprechen von PaperFree – bewusst auffällig gestaltet. */
-export function PrivacyBadge({ size = "sm", className }: PrivacyBadgeProps) {
+/** PaperFree's core promise – intentionally eye-catching. */
+export function PrivacyBadge({ locale, size = "sm", className }: PrivacyBadgeProps) {
+  const t = getDictionary(locale).privacyBadge;
   return (
     <div
       className={cn(
@@ -21,7 +25,7 @@ export function PrivacyBadge({ size = "sm", className }: PrivacyBadgeProps) {
       </span>
       <span className="min-w-0">
         <span aria-hidden="true">🔒 </span>
-        <strong className="font-extrabold">100% Lokal:</strong> Deine Dateien verlassen niemals deinen Browser.
+        <strong className="font-extrabold">{t.strong}</strong> {t.text}
       </span>
     </div>
   );

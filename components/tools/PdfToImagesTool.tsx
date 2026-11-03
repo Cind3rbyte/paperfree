@@ -20,26 +20,21 @@ import {
 } from "@/components/tools/ToolLayout";
 import { usePdfThumbnails } from "@/hooks/usePdfThumbnails";
 import { useTaskRunner } from "@/hooks/useTaskRunner";
+import { useI18n } from "@/lib/i18n/I18nProvider";
 import { createZip, renderPdfToImages, type RasterFormat } from "@/lib/pdf-utils";
 import { downloadBlob, getErrorMessage, sanitizeFileName, stripExtension } from "@/lib/utils";
 
 const PDF_ACCEPT = ["application/pdf", ".pdf"] as const;
 
-const FORMAT_OPTIONS = [
-  { value: "png", label: "PNG", hint: "verlustfrei" },
-  { value: "jpeg", label: "JPG", hint: "kleiner" },
-] as const;
+const FORMATS: readonly RasterFormat[] = ["png", "jpeg"];
+const DPI_VALUES = ["72", "150", "200", "300"] as const;
 
-const DPI_OPTIONS = [
-  { value: "72", label: "72", hint: "Web" },
-  { value: "150", label: "150", hint: "Standard" },
-  { value: "200", label: "200", hint: "Hoch" },
-  { value: "300", label: "300", hint: "Druck" },
-] as const;
-
-type DpiValue = (typeof DPI_OPTIONS)[number]["value"];
+type DpiValue = (typeof DPI_VALUES)[number];
 
 export function PdfToImagesTool() {
+  const { t } = useI18n();
+  const formatOptions = FORMATS.map((value) => ({ value, ...t.pdfToImages.formats[value] }));
+  const dpiOptions = DPI_VALUES.map((value) => ({ value, label: value, hint: t.pdfToImages.dpiHints[value] }));
   const [file, setFile] = useState<File | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [format, setFormat] = useState<RasterFormat>("png");
@@ -77,7 +72,7 @@ export function PdfToImagesTool() {
 
   const allIndices = useMemo(() => Array.from({ length: pageCount }, (_, index) => index), [pageCount]);
   const sortedSelection = useMemo(() => Array.from(selected).sort((a, b) => a - b), [selected]);
-  const baseName = file ? sanitizeFileName(stripExtension(file.name), "dokument") : "dokument";
+  const baseName = file ? sanitizeFileName(stripExtension(file.name), "document") : "document";
   const options = { dpi: Number(dpi), format, quality: quality / 100 };
 
   const firstThumbnail = thumbs.thumbnails.find(Boolean);
@@ -119,8 +114,8 @@ export function PdfToImagesTool() {
       );
       return {
         blob: zip,
-        fileName: `${baseName}-bilder.zip`,
-        details: `${images.length} ${format === "png" ? "PNG" : "JPG"}-Bilder in ${dpi} DPI`,
+        fileName: `${baseName}-${t.pdfToImages.imagesSuffix}.zip`,
+        details: t.pdfToImages.detailsZip(images.length, format === "png" ? "PNG" : "JPG", dpi),
       } satisfies ResultFile;
     });
     if (output) setResult(output);
@@ -133,7 +128,7 @@ export function PdfToImagesTool() {
       const [image] = await renderPdfToImages(file, { ...options, pageIndices: [index] }, baseName);
       if (image) downloadBlob(image.blob, image.name);
     } catch (error) {
-      setSingleError(getErrorMessage(error));
+      setSingleError(getErrorMessage(error, t.common.unknownError));
     }
   };
 
@@ -142,9 +137,9 @@ export function PdfToImagesTool() {
       <Dropzone
         accept={PDF_ACCEPT}
         onFiles={loadFile}
-        title="PDF in Bilder umwandeln"
-        description="oder hierher ziehen · jede Seite wird als PNG oder JPG gespeichert"
-        buttonLabel="PDF auswählen"
+        title={t.pdfToImages.dropTitle}
+        description={t.pdfToImages.dropDescription}
+        buttonLabel={t.pdfToImages.dropButton}
         icon={<Images className="size-7" aria-hidden="true" />}
       />
     );
@@ -156,21 +151,21 @@ export function PdfToImagesTool() {
         <div>
           <LoadedFileBar file={file} pageCount={pageCount} rendered={thumbs.rendered} loading={thumbs.loading} onReplace={reset} />
           {thumbs.error ? (
-            <Alert tone="error" title="PDF konnte nicht geladen werden">
+            <Alert tone="error" title={t.workspace.loadErrorTitle}>
               {thumbs.error}
             </Alert>
           ) : (
             <>
               <MainToolbar>
                 <span className="px-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
-                  {selected.size} von {pageCount} Seiten ausgewählt
+                  {t.pdfToImages.selectedCount(selected.size, pageCount)}
                 </span>
                 <div className="ml-auto flex gap-1">
                   <Button variant="ghost" size="sm" onClick={() => setSelected(new Set(allIndices))}>
-                    Alle
+                    {t.pdfToImages.all}
                   </Button>
                   <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>
-                    Keine
+                    {t.pdfToImages.none}
                   </Button>
                 </div>
               </MainToolbar>
@@ -183,13 +178,13 @@ export function PdfToImagesTool() {
                 {allIndices.map((index) => (
                   <PageCard
                     key={index}
-                    label={`Seite ${index + 1}`}
+                    label={t.workspace.pageLabel(index + 1)}
                     thumbnail={thumbs.thumbnails[index]}
                     selectable
                     selected={selected.has(index)}
                     onClick={() => toggle(index)}
                     actions={
-                      <IconButton label={`Nur Seite ${index + 1} herunterladen`} onClick={() => downloadSingle(index)}>
+                      <IconButton label={t.pdfToImages.downloadOnly(index + 1)} onClick={() => downloadSingle(index)}>
                         <Download className="size-4" aria-hidden="true" />
                       </IconButton>
                     }
@@ -202,15 +197,15 @@ export function PdfToImagesTool() {
       }
       sidebar={
         result ? (
-          <ResultPanel result={result} onReset={reset} resetLabel="Andere PDF umwandeln" />
+          <ResultPanel result={result} onReset={reset} resetLabel={t.pdfToImages.resetLabel} />
         ) : (
-          <PanelCard title="Bild-Export">
-            <SegmentedControl label="Format" value={format} options={FORMAT_OPTIONS} onChange={setFormat} columns={2} />
-            <SegmentedControl label="Auflösung (DPI)" value={dpi} options={DPI_OPTIONS} onChange={setDpi} columns={4} />
+          <PanelCard title={t.pdfToImages.panelTitle}>
+            <SegmentedControl label={t.pdfToImages.formatLabel} value={format} options={formatOptions} onChange={setFormat} columns={2} />
+            <SegmentedControl label={t.pdfToImages.dpiLabel} value={dpi} options={dpiOptions} onChange={setDpi} columns={4} />
             {format === "jpeg" && (
               <label className="block space-y-2">
                 <span className="flex items-center justify-between text-sm font-semibold text-slate-800 dark:text-slate-100">
-                  JPG-Qualität <span className="tabular-nums text-indigo-600 dark:text-indigo-300">{quality}%</span>
+                  {t.pdfToImages.jpgQuality} <span className="tabular-nums text-indigo-600 dark:text-indigo-300">{quality}%</span>
                 </span>
                 <input
                   type="range"
@@ -224,9 +219,12 @@ export function PdfToImagesTool() {
               </label>
             )}
             <div className="space-y-2 rounded-xl bg-slate-50 p-3 dark:bg-slate-800/50">
-              <StatLine label="Bilder" value={selected.size} />
-              <StatLine label="Größe (Seite 1)" value={pixelSize} />
-              <StatLine label="Download als" value={selected.size > 1 ? "ZIP-Archiv" : format === "png" ? "PNG" : "JPG"} />
+              <StatLine label={t.pdfToImages.statImages} value={selected.size} />
+              <StatLine label={t.pdfToImages.statSize} value={pixelSize} />
+              <StatLine
+                label={t.pdfToImages.statDownloadAs}
+                value={selected.size > 1 ? t.pdfToImages.zipArchive : format === "png" ? "PNG" : "JPG"}
+              />
             </div>
             <TaskFeedback task={task} />
             <Button
@@ -237,7 +235,7 @@ export function PdfToImagesTool() {
               icon={<Images className="size-5" aria-hidden="true" />}
               onClick={handleExport}
             >
-              {task.isWorking ? "Bilder werden erzeugt …" : selected.size > 1 ? "Bilder als ZIP exportieren" : "Bild exportieren"}
+              {task.isWorking ? t.pdfToImages.working : selected.size > 1 ? t.pdfToImages.buttonZip : t.pdfToImages.buttonSingle}
             </Button>
           </PanelCard>
         )

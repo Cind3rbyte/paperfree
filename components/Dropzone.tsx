@@ -3,6 +3,7 @@
 import { useCallback, useId, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { Upload } from "lucide-react";
 import { ProgressBar } from "@/components/ui/ProgressBar";
+import { useI18n } from "@/lib/i18n/I18nProvider";
 import { cn, matchesAccept } from "@/lib/utils";
 
 export interface DropzoneProgress {
@@ -20,7 +21,7 @@ interface DropzoneProps {
   icon?: ReactNode;
   compact?: boolean;
   disabled?: boolean;
-  /** Zeigt einen Ladebalken an, während Dateien eingelesen werden. */
+  /** Shows a progress bar while files are being read. */
   progress?: DropzoneProgress | null;
   className?: string;
 }
@@ -31,13 +32,14 @@ export function Dropzone({
   onFiles,
   title,
   description,
-  buttonLabel = multiple ? "Dateien auswählen" : "Datei auswählen",
+  buttonLabel,
   icon,
   compact = false,
   disabled = false,
   progress = null,
   className,
 }: DropzoneProps) {
+  const { t } = useI18n();
   const inputRef = useRef<HTMLInputElement>(null);
   const dragDepth = useRef(0);
   const [isDragging, setIsDragging] = useState(false);
@@ -135,21 +137,21 @@ export function Dropzone({
         </span>
         <div className="relative space-y-1">
           <p className={cn("font-bold text-slate-900 dark:text-white", compact ? "text-sm" : "text-xl sm:text-2xl")}>
-            {isDragging ? "Loslassen zum Hinzufügen" : title}
+            {isDragging ? t.dropzone.dropToAdd : title}
           </p>
           <p id={descriptionId} className={cn("text-slate-600 dark:text-slate-400", compact ? "text-xs" : "text-sm")}>
-            {description ?? `oder hierher ziehen${acceptLabel ? ` · ${acceptLabel}` : ""}`}
+            {description ?? `${t.dropzone.orDragHere}${acceptLabel ? ` · ${acceptLabel}` : ""}`}
           </p>
         </div>
         {!compact && (
           <span className="relative inline-flex h-11 items-center gap-2 rounded-xl bg-indigo-600 px-5 text-sm font-semibold text-white shadow-sm transition group-hover:bg-indigo-500 dark:bg-indigo-500">
             <Upload className="size-4" aria-hidden="true" />
-            {buttonLabel}
+            {buttonLabel ?? (multiple ? t.dropzone.selectFiles : t.dropzone.selectFile)}
           </span>
         )}
         {!compact && (
           <p className="relative text-xs font-medium text-emerald-700 dark:text-emerald-300">
-            🔒 Wird ausschließlich lokal in deinem Browser verarbeitet
+            {t.dropzone.localNote}
           </p>
         )}
         <input
@@ -170,13 +172,13 @@ export function Dropzone({
 
       {progress && (
         <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-          <ProgressBar value={progress.value} label={progress.label} />
+          <ProgressBar value={progress.value} label={progress.label} ariaLabel={t.common.progress} />
         </div>
       )}
 
       {rejected.length > 0 && (
         <p role="alert" className="mt-3 text-sm text-rose-600 dark:text-rose-300">
-          Nicht unterstütztes Format übersprungen: {rejected.join(", ")}
+          {t.dropzone.rejected(rejected.join(", "))}
         </p>
       )}
     </div>

@@ -18,6 +18,7 @@ import {
 } from "@/components/tools/ToolLayout";
 import { useDragReorder } from "@/hooks/useDragReorder";
 import { useTaskRunner } from "@/hooks/useTaskRunner";
+import { useI18n } from "@/lib/i18n/I18nProvider";
 import { bytesToBlob, getPdfPreview, mergePdfs, type PageThumbnail } from "@/lib/pdf-utils";
 import { buildOutputFileName, cn, createId, formatBytes, getErrorMessage, moveItem, naturalCollator } from "@/lib/utils";
 
@@ -32,8 +33,9 @@ interface MergeItem {
 }
 
 export function MergeTool() {
+  const { locale, t } = useI18n();
   const [items, setItems] = useState<MergeItem[]>([]);
-  const [outputName, setOutputName] = useState("zusammengefuegt");
+  const [outputName, setOutputName] = useState(t.merge.defaultName);
   const [result, setResult] = useState<ResultFile | null>(null);
   const [loading, setLoading] = useState<DropzoneProgress | null>(null);
   const task = useTaskRunner();
@@ -66,18 +68,18 @@ export function MergeTool() {
       resetTask();
 
       for (const [index, item] of newItems.entries()) {
-        setLoading({ value: index / newItems.length, label: `Lese „${item.file.name}“ (${index + 1}/${newItems.length}) …` });
+        setLoading({ value: index / newItems.length, label: t.merge.reading(item.file.name, index + 1, newItems.length) });
         try {
           const preview = await getPdfPreview(item.file, 96);
           if (preview.thumbnail) thumbnailUrls.current.add(preview.thumbnail.url);
           updateItem(item.id, { pageCount: preview.pageCount, thumbnail: preview.thumbnail });
         } catch (error) {
-          updateItem(item.id, { error: getErrorMessage(error) });
+          updateItem(item.id, { error: getErrorMessage(error, t.common.unknownError) });
         }
       }
       setLoading(null);
     },
-    [resetTask, updateItem],
+    [resetTask, t, updateItem],
   );
 
   const moveEntry = useCallback((from: number, to: number) => {
@@ -124,8 +126,8 @@ export function MergeTool() {
     if (bytes) {
       setResult({
         blob: bytesToBlob(bytes),
-        fileName: buildOutputFileName(outputName, "zusammengefuegt", "pdf"),
-        details: `${validItems.length} Dateien · ${totalPages} Seiten`,
+        fileName: buildOutputFileName(outputName, t.merge.defaultName, "pdf"),
+        details: t.merge.details(validItems.length, totalPages),
       });
     }
   };
@@ -136,9 +138,9 @@ export function MergeTool() {
         accept={PDF_ACCEPT}
         multiple
         onFiles={addFiles}
-        title="PDF-Dateien auswählen"
-        description="oder hierher ziehen · mehrere PDFs gleichzeitig möglich"
-        buttonLabel="PDFs auswählen"
+        title={t.merge.dropTitle}
+        description={t.merge.dropDescription}
+        buttonLabel={t.merge.dropButton}
         progress={loading}
       />
     );
@@ -150,7 +152,7 @@ export function MergeTool() {
         <div>
           <MainToolbar>
             <span className="px-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
-              {items.length} {items.length === 1 ? "Datei" : "Dateien"}
+              {t.common.files(items.length)}
             </span>
             <span className="mx-1 hidden h-5 w-px bg-slate-200 sm:block dark:bg-slate-700" aria-hidden="true" />
             <Button
@@ -162,7 +164,7 @@ export function MergeTool() {
                 setResult(null);
               }}
             >
-              Nach Name sortieren
+              {t.workspace.sortByName}
             </Button>
             <Button
               variant="ghost"
@@ -173,7 +175,7 @@ export function MergeTool() {
                 setResult(null);
               }}
             >
-              Umkehren
+              {t.workspace.reverse}
             </Button>
             <Button
               variant="ghost"
@@ -182,13 +184,13 @@ export function MergeTool() {
               icon={<Trash2 className="size-4" aria-hidden="true" />}
               onClick={clearAll}
             >
-              Alle entfernen
+              {t.workspace.removeAll}
             </Button>
           </MainToolbar>
 
           <p className="mb-3 text-sm text-slate-500 dark:text-slate-400">
-            Ziehe die Dateien am Griff <GripVertical className="inline size-4 align-text-bottom" aria-hidden="true" /> in die
-            gewünschte Reihenfolge oder nutze die Pfeile.
+            {t.merge.dragHintBefore} <GripVertical className="inline size-4 align-text-bottom" aria-hidden="true" />{" "}
+            {t.merge.dragHintAfter}
           </p>
 
           <ol className="space-y-2">
@@ -222,23 +224,23 @@ export function MergeTool() {
                   <p className={cn("text-xs", item.error ? "text-rose-600 dark:text-rose-300" : "text-slate-500 dark:text-slate-400")}>
                     {item.error
                       ? item.error
-                      : `${formatBytes(item.file.size)} · ${
-                          item.pageCount === null ? "wird gelesen …" : `${item.pageCount} ${item.pageCount === 1 ? "Seite" : "Seiten"}`
+                      : `${formatBytes(item.file.size, locale)} · ${
+                          item.pageCount === null ? t.merge.readingShort : t.common.pages(item.pageCount)
                         }`}
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
-                  <IconButton label="Nach oben verschieben" onClick={() => moveEntry(index, index - 1)} disabled={index === 0}>
+                  <IconButton label={t.workspace.moveUp} onClick={() => moveEntry(index, index - 1)} disabled={index === 0}>
                     <ArrowUp className="size-4" aria-hidden="true" />
                   </IconButton>
                   <IconButton
-                    label="Nach unten verschieben"
+                    label={t.workspace.moveDown}
                     onClick={() => moveEntry(index, index + 1)}
                     disabled={index === items.length - 1}
                   >
                     <ArrowDown className="size-4" aria-hidden="true" />
                   </IconButton>
-                  <IconButton label={`„${item.file.name}“ entfernen`} tone="danger" onClick={() => removeItem(item.id)}>
+                  <IconButton label={t.workspace.remove(item.file.name)} tone="danger" onClick={() => removeItem(item.id)}>
                     <X className="size-4" aria-hidden="true" />
                   </IconButton>
                 </div>
@@ -252,8 +254,8 @@ export function MergeTool() {
             multiple
             compact
             onFiles={addFiles}
-            title="Weitere PDFs hinzufügen"
-            description="Klicken oder Dateien hierher ziehen"
+            title={t.merge.addMoreTitle}
+            description={t.merge.addMoreDescription}
             icon={<Plus className="size-5" aria-hidden="true" />}
             progress={loading}
           />
@@ -261,22 +263,19 @@ export function MergeTool() {
       }
       sidebar={
         result ? (
-          <ResultPanel result={result} onReset={clearAll} resetLabel="Neue Dateien zusammenfügen" />
+          <ResultPanel result={result} onReset={clearAll} resetLabel={t.merge.resetLabel} />
         ) : (
-          <PanelCard title="Zusammenfügen">
+          <PanelCard title={t.merge.panelTitle}>
             <div className="space-y-2 rounded-xl bg-slate-50 p-3 dark:bg-slate-800/50">
-              <StatLine label="Dateien" value={validItems.length} />
-              <StatLine label="Seiten gesamt" value={totalPages} />
-              <StatLine label="Gesamtgröße" value={formatBytes(totalSize)} />
+              <StatLine label={t.merge.statFiles} value={validItems.length} />
+              <StatLine label={t.merge.statPages} value={totalPages} />
+              <StatLine label={t.merge.statSize} value={formatBytes(totalSize, locale)} />
             </div>
             <FileNameInput value={outputName} onChange={setOutputName} extension="pdf" />
             {brokenCount > 0 && (
-              <Alert tone="warning">
-                {brokenCount === 1 ? "Eine Datei konnte" : `${brokenCount} Dateien konnten`} nicht gelesen werden und{" "}
-                {brokenCount === 1 ? "wird" : "werden"} übersprungen.
-              </Alert>
+              <Alert tone="warning">{t.merge.broken(brokenCount)}</Alert>
             )}
-            {validItems.length < 2 && <Alert tone="info">Füge mindestens zwei PDF-Dateien hinzu.</Alert>}
+            {validItems.length < 2 && <Alert tone="info">{t.merge.needTwo}</Alert>}
             <TaskFeedback task={task} />
             <Button
               size="lg"
@@ -286,7 +285,7 @@ export function MergeTool() {
               icon={<Combine className="size-5" aria-hidden="true" />}
               onClick={handleMerge}
             >
-              {task.isWorking ? "Wird zusammengefügt …" : "PDFs zusammenfügen"}
+              {task.isWorking ? t.merge.working : t.merge.button}
             </Button>
           </PanelCard>
         )

@@ -3,18 +3,19 @@
 import type { MouseEvent, ReactNode } from "react";
 import { Check } from "lucide-react";
 import type { DragItemProps } from "@/hooks/useDragReorder";
+import { useI18n } from "@/lib/i18n/I18nProvider";
 import type { PageThumbnail } from "@/lib/pdf-utils";
 import { cn } from "@/lib/utils";
 
 interface PageCardProps {
   label: string;
   thumbnail?: PageThumbnail;
-  /** Angezeigte Drehung (darf über 360 hinausgehen, damit Animationen immer in Drehrichtung laufen). */
+  /** Displayed rotation (may exceed 360 so animations always turn in the right direction). */
   rotation?: number;
   selected?: boolean;
   selectable?: boolean;
   dimmed?: boolean;
-  /** Kleines Kennzeichen oben links (z. B. die aktuelle Position). */
+  /** Small badge in the top-left corner (e.g. the current position). */
   badge?: ReactNode;
   overlay?: ReactNode;
   actions?: ReactNode;
@@ -25,7 +26,7 @@ interface PageCardProps {
   isDragOver?: boolean;
 }
 
-/** Vorschaukarte für eine PDF-Seite – wählbar, drehbar und per Drag-and-Drop verschiebbar. */
+/** Preview card for a PDF page – selectable, rotatable and movable via drag and drop. */
 export function PageCard({
   label,
   thumbnail,
@@ -42,11 +43,12 @@ export function PageCard({
   isDragging = false,
   isDragOver = false,
 }: PageCardProps) {
+  const { t } = useI18n();
   const quarterTurn = Math.abs(Math.round(rotation / 90)) % 2 === 1;
   const preview = (
     <div className="relative aspect-[4/5] w-full overflow-hidden rounded-xl bg-slate-100 dark:bg-slate-800/80">
       {thumbnail ? (
-        // eslint-disable-next-line @next/next/no-img-element -- lokale Blob-URL, next/image ist hier nicht anwendbar
+        // eslint-disable-next-line @next/next/no-img-element -- local blob URL, next/image doesn't apply here
         <img
           src={thumbnail.url}
           alt={label}
@@ -98,7 +100,7 @@ export function PageCard({
           type="button"
           onClick={onClick}
           aria-pressed={selectable ? selected : undefined}
-          aria-label={selectable ? `${label} ${selected ? "abwählen" : "auswählen"}` : label}
+          aria-label={selectable ? (selected ? t.workspace.deselect(label) : t.workspace.select(label)) : label}
           className="block w-full rounded-xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500"
         >
           {preview}

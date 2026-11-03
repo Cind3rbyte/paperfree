@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { localizePath, type Locale } from "@/lib/i18n/config";
 import { cn } from "@/lib/utils";
 
 export function LogoMark({ className }: { className?: string }) {
@@ -18,9 +19,15 @@ export function LogoMark({ className }: { className?: string }) {
   );
 }
 
-export function Logo({ className }: { className?: string }) {
+export function Logo({ locale, className }: { locale: Locale; className?: string }) {
   return (
-    <Link href="/" className={cn("group inline-flex items-center gap-2.5 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-indigo-500", className)}>
+    <Link
+      href={localizePath(locale)}
+      className={cn(
+        "group inline-flex items-center gap-2.5 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-indigo-500",
+        className,
+      )}
+    >
       <LogoMark className="transition group-hover:scale-105" />
       <span className="text-lg font-extrabold tracking-tight text-slate-900 dark:text-white">
         Paper<span className="bg-gradient-to-r from-indigo-500 to-violet-500 bg-clip-text text-transparent">Free</span>

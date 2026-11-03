@@ -6,12 +6,9 @@ function resolveSiteUrl(): string {
   return "http://localhost:3000";
 }
 
+/** Global project settings. Texts live in lib/i18n/dictionaries. */
 export const siteConfig = {
   name: "PaperFree",
-  title: "PaperFree – Kostenlose PDF-Werkzeuge, 100 % lokal im Browser",
-  shortDescription: "Kostenlose PDF-Werkzeuge ohne Upload, ohne Konto, ohne Limits.",
-  description:
-    "PDFs zusammenfügen, teilen, drehen, komprimieren und in Bilder umwandeln – kostenlos, quelloffen und zu 100 % lokal im Browser. Deine Dateien verlassen niemals dein Gerät.",
   url: resolveSiteUrl(),
   githubUrl: process.env.NEXT_PUBLIC_GITHUB_URL || "https://github.com/cind3rbyte/paperfree",
   kofiUrl: process.env.NEXT_PUBLIC_KOFI_URL || "https://ko-fi.com/cind3rbyte",

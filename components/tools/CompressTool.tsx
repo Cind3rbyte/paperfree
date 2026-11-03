@@ -16,6 +16,7 @@ import {
   type ResultFile,
 } from "@/components/tools/ToolLayout";
 import { useTaskRunner } from "@/hooks/useTaskRunner";
+import { useI18n } from "@/lib/i18n/I18nProvider";
 import {
   bytesToBlob,
   compressPdf,
@@ -29,28 +30,18 @@ import { cn, formatBytes, getErrorMessage, sanitizeFileName, stripExtension } fr
 
 const PDF_ACCEPT = ["application/pdf", ".pdf"] as const;
 
-const PRESETS = [
-  { label: "Gering", value: 85, hint: "beste Qualität" },
-  { label: "Empfohlen", value: 60, hint: "ausgewogen" },
-  { label: "Extrem", value: 25, hint: "kleinste Datei" },
-] as const;
-
-const MODES: { value: CompressionMode; title: string; text: string; icon: typeof Sparkles }[] = [
-  {
-    value: "smart",
-    title: "Smart (empfohlen)",
-    text: "Text & Vektoren bleiben gestochen scharf und durchsuchbar. Eingebettete Fotos werden verkleinert und neu komprimiert.",
-    icon: Sparkles,
-  },
-  {
-    value: "raster",
-    title: "Maximal (Canvas-Resampling)",
-    text: "Jede Seite wird als Bild neu berechnet. Ideal für Scans – Text ist danach aber nicht mehr markierbar.",
-    icon: ScanLine,
-  },
-];
+const MODE_ICONS: Record<CompressionMode, typeof Sparkles> = {
+  smart: Sparkles,
+  raster: ScanLine,
+};
 
 export function CompressTool() {
+  const { locale, t } = useI18n();
+  const modes = (Object.keys(MODE_ICONS) as CompressionMode[]).map((value) => ({
+    value,
+    icon: MODE_ICONS[value],
+    ...t.compress.modes[value],
+  }));
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<PdfPreview | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -61,6 +52,7 @@ export function CompressTool() {
   const [stats, setStats] = useState<CompressResult | null>(null);
   const task = useTaskRunner();
   const { reset: resetTask } = task;
+  const fallbackError = t.common.unknownError;
 
   useEffect(() => {
     if (!file) {
@@ -81,13 +73,13 @@ export function CompressTool() {
         setPreview(value);
       })
       .catch((error: unknown) => {
-        if (!cancelled) setPreviewError(getErrorMessage(error));
+        if (!cancelled) setPreviewError(getErrorMessage(error, fallbackError));
       });
     return () => {
       cancelled = true;
       if (thumbnailUrl) URL.revokeObjectURL(thumbnailUrl);
     };
-  }, [file]);
+  }, [fallbackError, file]);
 
   const loadFile = useCallback(
     (files: File[]) => {
@@ -120,11 +112,8 @@ export function CompressTool() {
       const saved = 1 - output.compressedSize / output.originalSize;
       setResult({
         blob: bytesToBlob(output.bytes),
-        fileName: `${sanitizeFileName(stripExtension(file.name), "dokument")}-komprimiert.pdf`,
-        details:
-          saved > 0
-            ? `${Math.round(saved * 100)} % kleiner als das Original`
-            : "Die Datei ließ sich mit diesen Einstellungen nicht weiter verkleinern.",
+        fileName: `${sanitizeFileName(stripExtension(file.name), "document")}-${t.compress.compressedSuffix}.pdf`,
+        details: saved > 0 ? t.compress.saved(Math.round(saved * 100)) : t.compress.notSmaller,
       });
     }
   };
@@ -134,9 +123,9 @@ export function CompressTool() {
       <Dropzone
         accept={PDF_ACCEPT}
         onFiles={loadFile}
-        title="PDF zum Komprimieren auswählen"
-        description="oder hierher ziehen · ideal für E-Mail-Anhänge und Upload-Portale"
-        buttonLabel="PDF auswählen"
+        title={t.compress.dropTitle}
+        description={t.compress.dropDescription}
+        buttonLabel={t.compress.dropButton}
         icon={<Minimize2 className="size-7" aria-hidden="true" />}
       />
     );
@@ -150,13 +139,13 @@ export function CompressTool() {
         <div className="space-y-4">
           <LoadedFileBar file={file} pageCount={preview?.pageCount ?? 0} rendered={0} loading={false} onReplace={reset} />
           {previewError && (
-            <Alert tone="error" title="PDF konnte nicht geladen werden">
+            <Alert tone="error" title={t.workspace.loadErrorTitle}>
               {previewError}
             </Alert>
           )}
 
           <div className="grid gap-3 md:grid-cols-2">
-            {MODES.map((entry) => {
+            {modes.map((entry) => {
               const Icon = entry.icon;
               const active = mode === entry.value;
               return (
@@ -199,7 +188,7 @@ export function CompressTool() {
                 // eslint-disable-next-line @next/next/no-img-element -- lokale Blob-URL
                 <img
                   src={preview.thumbnail.url}
-                  alt="Vorschau der ersten Seite"
+                  alt={t.compress.previewAlt}
                   className={cn("max-h-64 w-auto rounded shadow-md transition", mode === "raster" && grayscale && "grayscale")}
                 />
               ) : (
@@ -208,9 +197,9 @@ export function CompressTool() {
             </div>
             <div className="space-y-5">
               <div>
-                <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">Voreinstellung</p>
+                <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{t.compress.presetLabel}</p>
                 <div className="mt-2 grid grid-cols-3 gap-2">
-                  {PRESETS.map((preset) => (
+                  {t.compress.presets.map((preset) => (
                     <button
                       key={preset.label}
                       type="button"
@@ -235,7 +224,7 @@ export function CompressTool() {
 
               <label className="block space-y-2">
                 <span className="flex items-center justify-between text-sm font-semibold text-slate-800 dark:text-slate-100">
-                  Qualität
+                  {t.compress.qualityLabel}
                   <span className="tabular-nums text-indigo-600 dark:text-indigo-300">{quality}%</span>
                 </span>
                 <input
@@ -253,15 +242,15 @@ export function CompressTool() {
                   aria-describedby="quality-hint"
                 />
                 <span id="quality-hint" className="flex justify-between text-xs text-slate-500 dark:text-slate-400">
-                  <span>Kleinste Datei</span>
-                  <span>Beste Qualität</span>
+                  <span>{t.compress.smallest}</span>
+                  <span>{t.compress.best}</span>
                 </span>
               </label>
 
               <p className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">
                 {mode === "smart"
-                  ? `Fotos: max. ${settings.maxImageSide.toLocaleString("de-DE")} px Kantenlänge, JPEG-Qualität ${Math.round(settings.jpegQuality * 100)} %`
-                  : `Seiten werden mit ${settings.rasterDpi} DPI und JPEG-Qualität ${Math.round(settings.jpegQuality * 100)} % neu berechnet`}
+                  ? t.compress.settingsSmart(settings.maxImageSide.toLocaleString(locale), Math.round(settings.jpegQuality * 100))
+                  : t.compress.settingsRaster(settings.rasterDpi, Math.round(settings.jpegQuality * 100))}
               </p>
 
               {mode === "raster" && (
@@ -276,35 +265,32 @@ export function CompressTool() {
                     }}
                     className="size-4 rounded accent-indigo-600"
                   />
-                  In Graustufen umwandeln (spart zusätzlich Platz)
+                  {t.compress.grayscale}
                 </label>
               )}
             </div>
           </Card>
 
           {mode === "raster" && (
-            <Alert tone="warning">
-              Im Modus „Maximal“ wird jede Seite zu einem Bild. Text lässt sich danach nicht mehr markieren, kopieren oder durchsuchen,
-              und Links sowie Formularfelder gehen verloren.
-            </Alert>
+            <Alert tone="warning">{t.compress.rasterWarning}</Alert>
           )}
         </div>
       }
       sidebar={
         result && stats ? (
-          <ResultPanel result={result} onReset={reset} resetLabel="Andere PDF komprimieren">
+          <ResultPanel result={result} onReset={reset} resetLabel={t.compress.resetLabel}>
             <div className="space-y-3 rounded-xl bg-white/70 p-3 dark:bg-slate-950/40">
               <div>
                 <div className="mb-1 flex justify-between text-xs font-medium text-slate-600 dark:text-slate-300">
-                  <span>Vorher</span>
-                  <span className="tabular-nums">{formatBytes(stats.originalSize)}</span>
+                  <span>{t.compress.before}</span>
+                  <span className="tabular-nums">{formatBytes(stats.originalSize, locale)}</span>
                 </div>
                 <div className="h-2.5 rounded-full bg-slate-300 dark:bg-slate-600" />
               </div>
               <div>
                 <div className="mb-1 flex justify-between text-xs font-medium text-slate-600 dark:text-slate-300">
-                  <span>Nachher</span>
-                  <span className="tabular-nums">{formatBytes(stats.compressedSize)}</span>
+                  <span>{t.compress.after}</span>
+                  <span className="tabular-nums">{formatBytes(stats.compressedSize, locale)}</span>
                 </div>
                 <div className="h-2.5 rounded-full bg-slate-200 dark:bg-slate-800">
                   <div
@@ -320,18 +306,18 @@ export function CompressTool() {
               )}
               {saved <= 0 && (
                 <p className="text-xs font-medium text-amber-700 dark:text-amber-300">
-                  Tipp: Probiere eine niedrigere Qualität oder den Modus „Maximal“. Deine Originaldatei ist evtl. bereits optimal.
+                  {t.compress.notSmallerTip}
                 </p>
               )}
             </div>
           </ResultPanel>
         ) : (
-          <PanelCard title="Komprimieren">
+          <PanelCard title={t.compress.panelTitle}>
             <div className="space-y-2 rounded-xl bg-slate-50 p-3 dark:bg-slate-800/50">
-              <StatLine label="Originalgröße" value={formatBytes(file.size)} />
-              <StatLine label="Seiten" value={preview?.pageCount ?? "–"} />
-              <StatLine label="Modus" value={mode === "smart" ? "Smart" : "Maximal"} />
-              <StatLine label="Qualität" value={`${quality} %`} />
+              <StatLine label={t.compress.statOriginal} value={formatBytes(file.size, locale)} />
+              <StatLine label={t.compress.statPages} value={preview?.pageCount ?? "–"} />
+              <StatLine label={t.compress.statMode} value={mode === "smart" ? t.compress.modeSmart : t.compress.modeRaster} />
+              <StatLine label={t.compress.statQuality} value={`${quality}%`} />
             </div>
             <TaskFeedback task={task} />
             <Button
@@ -342,7 +328,7 @@ export function CompressTool() {
               icon={<Minimize2 className="size-5" aria-hidden="true" />}
               onClick={handleCompress}
             >
-              {task.isWorking ? "Wird komprimiert …" : "PDF komprimieren"}
+              {task.isWorking ? t.compress.working : t.compress.button}
             </Button>
           </PanelCard>
         )

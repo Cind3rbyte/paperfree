@@ -1,7 +1,7 @@
 /**
- * Kopiert den pdf.js-Worker sowie CMaps, Standard-Schriften, WASM-Decoder und
- * ICC-Profile aus node_modules nach public/pdfjs. So wird alles von der eigenen
- * Domain ausgeliefert – ohne CDN und ohne Versionskonflikte zwischen API und Worker.
+ * Copies the pdf.js worker plus CMaps, standard fonts, WASM decoders and ICC profiles
+ * from node_modules to public/pdfjs. Everything is served from your own domain –
+ * no CDN and no version mismatch between the API and the worker.
  */
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -24,7 +24,7 @@ function resolvePdfJsDir() {
 const pdfjsDir = resolvePdfJsDir();
 
 if (!pdfjsDir) {
-  console.warn("[paperfree] pdfjs-dist wurde nicht gefunden – bitte zuerst `npm install` ausführen.");
+  console.warn("[paperfree] pdfjs-dist not found – please run `npm install` first.");
   process.exit(0);
 }
 
@@ -42,4 +42,4 @@ for (const directory of ["cmaps", "standard_fonts", "wasm", "iccs"]) {
   }
 }
 
-console.log(`[paperfree] pdf.js ${version}: Worker & Assets nach public/pdfjs kopiert.`);
+console.log(`[paperfree] pdf.js ${version}: copied worker & assets to public/pdfjs.`);

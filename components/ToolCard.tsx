@@ -1,13 +1,17 @@
 import Link from "next/link";
 import { ArrowRight, Check } from "lucide-react";
+import { localizePath, type Locale } from "@/lib/i18n/config";
+import { getDictionary } from "@/lib/i18n/dictionaries";
 import type { ToolDefinition } from "@/lib/tools";
 import { cn } from "@/lib/utils";
 
-export function ToolCard({ tool, compact = false }: { tool: ToolDefinition; compact?: boolean }) {
+export function ToolCard({ tool, locale, compact = false }: { tool: ToolDefinition; locale: Locale; compact?: boolean }) {
+  const t = getDictionary(locale);
+  const text = t.tools[tool.id];
   const Icon = tool.icon;
   return (
     <Link
-      href={tool.href}
+      href={localizePath(locale, tool.href)}
       className={cn(
         "group relative flex h-full flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white transition duration-300 hover:-translate-y-1 hover:border-slate-300 hover:shadow-2xl focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-indigo-500 dark:border-slate-800 dark:bg-slate-900/70 dark:hover:border-slate-700",
         tool.glow,
@@ -30,13 +34,13 @@ export function ToolCard({ tool, compact = false }: { tool: ToolDefinition; comp
       >
         <Icon className={compact ? "size-5" : "size-7"} aria-hidden="true" />
       </span>
-      <h3 className={cn("relative mt-5 font-bold text-slate-900 dark:text-white", compact ? "text-base" : "text-xl")}>{tool.title}</h3>
+      <h3 className={cn("relative mt-5 font-bold text-slate-900 dark:text-white", compact ? "text-base" : "text-xl")}>{text.title}</h3>
       <p className="relative mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-400">
-        {compact ? tool.tagline : tool.description}
+        {compact ? text.tagline : text.description}
       </p>
       {!compact && (
         <ul className="relative mt-5 space-y-1.5 text-sm text-slate-700 dark:text-slate-300">
-          {tool.highlights.map((highlight) => (
+          {text.highlights.map((highlight) => (
             <li key={highlight} className="flex items-center gap-2">
               <Check className="size-4 shrink-0 text-emerald-500" aria-hidden="true" />
               {highlight}
@@ -45,7 +49,7 @@ export function ToolCard({ tool, compact = false }: { tool: ToolDefinition; comp
         </ul>
       )}
       <span className="relative mt-auto inline-flex items-center gap-1.5 pt-6 text-sm font-semibold text-indigo-600 dark:text-indigo-300">
-        Jetzt öffnen
+        {t.toolCard.open}
         <ArrowRight className="size-4 transition group-hover:translate-x-1" aria-hidden="true" />
       </span>
     </Link>

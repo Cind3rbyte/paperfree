@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { renderThumbnails, type PageThumbnail } from "@/lib/pdf-utils";
+import { useI18n } from "@/lib/i18n/I18nProvider";
 import { getErrorMessage } from "@/lib/utils";
 
 export interface PdfThumbnailState {
@@ -20,8 +21,10 @@ const EMPTY_STATE: PdfThumbnailState = {
   error: null,
 };
 
-/** Lädt eine PDF lokal und rendert Seite für Seite Vorschaubilder. */
+/** Loads a PDF locally and renders thumbnails page by page. */
 export function usePdfThumbnails(file: File | null, maxSize = 240): PdfThumbnailState {
+  const { t } = useI18n();
+  const fallbackError = t.common.unknownError;
   const [state, setState] = useState<PdfThumbnailState>(EMPTY_STATE);
 
   useEffect(() => {
@@ -58,7 +61,7 @@ export function usePdfThumbnails(file: File | null, maxSize = 240): PdfThumbnail
       })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) {
-          setState((current) => ({ ...current, loading: false, error: getErrorMessage(error) }));
+          setState((current) => ({ ...current, loading: false, error: getErrorMessage(error, fallbackError) }));
         }
       });
 
@@ -66,7 +69,7 @@ export function usePdfThumbnails(file: File | null, maxSize = 240): PdfThumbnail
       controller.abort();
       for (const url of createdUrls) URL.revokeObjectURL(url);
     };
-  }, [file, maxSize]);
+  }, [fallbackError, file, maxSize]);
 
   return state;
 }

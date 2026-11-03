@@ -1,12 +1,12 @@
 /**
- * PaperFree PDF-Engine
+ * PaperFree PDF engine
  *
- * Alle Funktionen in dieser Datei laufen ausschließlich im Browser des Nutzers.
- * - pdf-lib  → Struktur-Operationen (zusammenfügen, teilen, drehen, Bilder einbetten)
- * - pdf.js   → Rendering (Vorschaubilder, PDF → Bild, Rastern beim Komprimieren)
- * - JSZip    → Mehrere Ergebnisdateien als ZIP bündeln
+ * Every function in this file runs exclusively in the user's browser.
+ * - pdf-lib  → structural operations (merge, split, rotate, embed images)
+ * - pdf.js   → rendering (thumbnails, PDF → image, rasterizing while compressing)
+ * - JSZip    → bundle multiple result files into a ZIP archive
  *
- * Es gibt keinerlei Netzwerkanfragen mit Nutzerdaten.
+ * No network request ever contains user data.
  */
 import JSZip from "jszip";
 import {
@@ -22,16 +22,18 @@ import {
   type PDFObject,
 } from "pdf-lib";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
+import { defaultLocale, type Locale } from "@/lib/i18n/config";
+import { dictionaries, type Dictionary } from "@/lib/i18n/dictionaries";
 import { clamp, stripExtension, yieldToBrowser } from "@/lib/utils";
 
 /* -------------------------------------------------------------------------- */
-/*                                Grundlagen                                  */
+/*                                  Basics                                    */
 /* -------------------------------------------------------------------------- */
 
-/** Fortschritt von 0 bis 1 plus optionaler Statustext. */
+/** Progress from 0 to 1 plus an optional status message. */
 export type ProgressHandler = (fraction: number, message?: string) => void;
 
-/** Fehler mit nutzerfreundlicher deutscher Meldung. */
+/** Error with a user-friendly, localized message. */
 export class PdfToolError extends Error {
   constructor(message: string, options?: { cause?: unknown }) {
     super(message, options);
@@ -46,26 +48,34 @@ export interface OutputFile {
   bytes: Uint8Array;
 }
 
-/** Pfad, unter dem scripts/copy-pdfjs-assets.mjs Worker & Assets ablegt. */
+/** Path where scripts/copy-pdfjs-assets.mjs places the worker & assets. */
 const PDFJS_ASSET_BASE = "/pdfjs/";
 
-/** iOS Safari begrenzt Canvas-Flächen auf ca. 16,7 Mio. Pixel. */
+/** iOS Safari limits canvas areas to roughly 16.7 million pixels. */
 const MAX_CANVAS_PIXELS = 16_000_000;
 const MAX_CANVAS_SIDE = 16_384;
 
-/** 1 CSS-Pixel = 0,75 PDF-Punkte (96 dpi → 72 dpi). */
+/** 1 CSS pixel = 0.75 PDF points (96 dpi → 72 dpi). */
 const PX_TO_PT = 0.75;
 
-const PRODUCER = "PaperFree – 100 % lokale PDF-Werkzeuge";
+const PRODUCER = "PaperFree – 100% local PDF tools";
 
-/** Liefert immer eine frische Kopie der Bytes (pdf.js überträgt Puffer an seinen Worker). */
+/** Texts of the active UI language (set by the I18nProvider). */
+let active: Dictionary = dictionaries[defaultLocale];
+
+/** Switches the language of error and progress messages. */
+export function setPdfLocale(locale: Locale): void {
+  active = dictionaries[locale];
+}
+
+/** Always returns a fresh copy of the bytes (pdf.js transfers buffers to its worker). */
 export async function toUint8Array(source: BinarySource): Promise<Uint8Array> {
   if (source instanceof Uint8Array) return source.slice();
   if (source instanceof ArrayBuffer) return new Uint8Array(source.slice(0));
   return new Uint8Array(await source.arrayBuffer());
 }
 
-/** Verpackt Bytes als Blob (TypeScript-sicher für alle Uint8Array-Varianten). */
+/** Wraps bytes in a Blob (type-safe for every Uint8Array variant). */
 export function bytesToBlob(bytes: Uint8Array, type = "application/pdf"): Blob {
   return new Blob([bytes as Uint8Array<ArrayBuffer>], { type });
 }
@@ -76,10 +86,10 @@ export function normalizeRotation(angle: number): number {
 }
 
 function sourceName(source: BinarySource): string {
-  return typeof File !== "undefined" && source instanceof File ? `„${source.name}“` : "Die Datei";
+  return typeof File !== "undefined" && source instanceof File ? active.common.quote(source.name) : active.pdf.theFile;
 }
 
-/** Prüft die PDF-Signatur „%PDF-“ in den ersten Bytes. */
+/** Checks for the "%PDF-" signature in the first bytes. */
 export async function isPdfFile(file: Blob): Promise<boolean> {
   const head = new Uint8Array(await file.slice(0, 1024).arrayBuffer());
   const text = String.fromCharCode(...head);
@@ -87,17 +97,17 @@ export async function isPdfFile(file: Blob): Promise<boolean> {
 }
 
 /* -------------------------------------------------------------------------- */
-/*                               pdf.js-Loader                                */
+/*                               pdf.js loader                                */
 /* -------------------------------------------------------------------------- */
 
 type PdfJsModule = typeof import("pdfjs-dist");
 
 let pdfJsPromise: Promise<PdfJsModule> | null = null;
 
-/** Lädt pdf.js erst bei Bedarf und nur im Browser (kein SSR). */
+/** Loads pdf.js on demand and only in the browser (no SSR). */
 export function loadPdfJs(): Promise<PdfJsModule> {
   if (typeof window === "undefined") {
-    return Promise.reject(new PdfToolError("pdf.js steht nur im Browser zur Verfügung."));
+    return Promise.reject(new PdfToolError(active.pdf.browserOnly));
   }
   if (!pdfJsPromise) {
     pdfJsPromise = import("pdfjs-dist")
@@ -107,7 +117,7 @@ export function loadPdfJs(): Promise<PdfJsModule> {
       })
       .catch((error: unknown) => {
         pdfJsPromise = null;
-        throw new PdfToolError("Die PDF-Render-Engine konnte nicht geladen werden. Bitte lade die Seite neu.", {
+        throw new PdfToolError(active.pdf.engineLoadFailed, {
           cause: error,
         });
       });
@@ -119,18 +129,18 @@ function translatePdfJsError(error: unknown, source: BinarySource): PdfToolError
   const name = typeof error === "object" && error !== null && "name" in error ? String(error.name) : "";
   if (name === "PasswordException") {
     return new PdfToolError(
-      `${sourceName(source)} ist passwortgeschützt. Bitte entferne zuerst das Passwort und versuche es erneut.`,
+      active.pdf.passwordProtected(sourceName(source)),
       { cause: error },
     );
   }
   if (name === "InvalidPDFException" || name === "FormatError") {
-    return new PdfToolError(`${sourceName(source)} ist keine gültige PDF-Datei oder beschädigt.`, { cause: error });
+    return new PdfToolError(active.pdf.invalidPdf(sourceName(source)), { cause: error });
   }
   if (error instanceof PdfToolError) return error;
-  return new PdfToolError(`${sourceName(source)} konnte nicht geöffnet werden.`, { cause: error });
+  return new PdfToolError(active.pdf.openFailed(sourceName(source)), { cause: error });
 }
 
-/** Öffnet ein Dokument mit pdf.js (für Rendering). Danach immer `destroy()` aufrufen. */
+/** Opens a document with pdf.js (for rendering). Always call `destroy()` afterwards. */
 export async function openPdfJsDocument(source: BinarySource): Promise<PDFDocumentProxy> {
   const pdfjs = await loadPdfJs();
   const data = await toUint8Array(source);
@@ -151,10 +161,10 @@ export async function openPdfJsDocument(source: BinarySource): Promise<PDFDocume
 }
 
 /* -------------------------------------------------------------------------- */
-/*                               pdf-lib-Loader                               */
+/*                               pdf-lib loader                               */
 /* -------------------------------------------------------------------------- */
 
-/** Öffnet ein Dokument mit pdf-lib (für Struktur-Operationen). */
+/** Opens a document with pdf-lib (for structural operations). */
 export async function loadPdfLibDocument(source: BinarySource): Promise<PDFDocument> {
   const bytes = await toUint8Array(source);
   try {
@@ -162,11 +172,11 @@ export async function loadPdfLibDocument(source: BinarySource): Promise<PDFDocum
   } catch (error) {
     if (error instanceof EncryptedPDFError) {
       throw new PdfToolError(
-        `${sourceName(source)} ist verschlüsselt bzw. passwortgeschützt. Bitte entferne zuerst den Schutz (z. B. über „Drucken als PDF“) und versuche es erneut.`,
+        active.pdf.encrypted(sourceName(source)),
         { cause: error },
       );
     }
-    throw new PdfToolError(`${sourceName(source)} konnte nicht als PDF gelesen werden. Ist die Datei beschädigt?`, {
+    throw new PdfToolError(active.pdf.unreadable(sourceName(source)), {
       cause: error,
     });
   }
@@ -197,21 +207,21 @@ async function savePdf(document: PDFDocument): Promise<Uint8Array> {
 }
 
 /* -------------------------------------------------------------------------- */
-/*                                Seitenbereiche                              */
+/*                                Page ranges                                 */
 /* -------------------------------------------------------------------------- */
 
 export interface ParsedPageRanges {
-  /** Alle Seiten (1-basiert) in eingegebener Reihenfolge, ohne Duplikate. */
+  /** All pages (1-based) in the order entered, without duplicates. */
   pages: number[];
-  /** Jede Komma-Gruppe als eigene Liste (1-basiert) – für „Jeder Bereich als eigene PDF“. */
+  /** Every comma group as its own list (1-based) – for "one PDF per range". */
   groups: number[][];
-  /** Nutzerfreundliche Fehlermeldung oder null. */
+  /** User-friendly error message or null. */
   error: string | null;
 }
 
 /**
- * Wandelt Eingaben wie „1-3, 5, 8-“ in Seitennummern um.
- * Unterstützt offene Bereiche („8-“ = 8 bis Ende, „-3“ = 1 bis 3) und absteigende Bereiche („5-3“).
+ * Turns input like "1-3, 5, 8-" into page numbers.
+ * Supports open ranges ("8-" = 8 to the end, "-3" = 1 to 3) and descending ranges ("5-3").
  */
 export function parsePageRanges(input: string, pageCount: number): ParsedPageRanges {
   const tokens = input
@@ -226,7 +236,7 @@ export function parsePageRanges(input: string, pageCount: number): ParsedPageRan
   const groups: number[][] = [];
   const ensureValid = (page: number): string | null =>
     page < 1 || page > pageCount
-      ? `Seite ${page} existiert nicht – das Dokument hat ${pageCount} ${pageCount === 1 ? "Seite" : "Seiten"}.`
+      ? active.pdf.rangeOutOfBounds(page, pageCount)
       : null;
 
   for (const token of tokens) {
@@ -257,7 +267,7 @@ export function parsePageRanges(input: string, pageCount: number): ParsedPageRan
     return {
       pages: [],
       groups: [],
-      error: `„${token}“ ist kein gültiger Seitenbereich. Beispiel: 1-3, 5, 8-`,
+      error: active.pdf.rangeInvalid(token),
     };
   }
 
@@ -275,7 +285,7 @@ export function parsePageRanges(input: string, pageCount: number): ParsedPageRan
   return { pages, groups, error: null };
 }
 
-/** Fasst Seitennummern kompakt zusammen: [1,2,3,5] → „1-3, 5“. */
+/** Compacts page numbers: [1,2,3,5] → "1-3, 5". */
 export function formatPageRanges(pages: Iterable<number>): string {
   const sorted = Array.from(new Set(pages)).sort((a, b) => a - b);
   const parts: string[] = [];
@@ -294,21 +304,21 @@ export function formatPageRanges(pages: Iterable<number>): string {
 }
 
 /* -------------------------------------------------------------------------- */
-/*                                 Zusammenfügen                              */
+/*                                    Merge                                   */
 /* -------------------------------------------------------------------------- */
 
-/** Fügt mehrere PDFs in der angegebenen Reihenfolge zu einer Datei zusammen. */
+/** Merges several PDFs into one file in the given order. */
 export async function mergePdfs(files: readonly BinarySource[], onProgress?: ProgressHandler): Promise<Uint8Array> {
   if (files.length < 2) {
-    throw new PdfToolError("Bitte wähle mindestens zwei PDF-Dateien zum Zusammenfügen aus.");
+    throw new PdfToolError(active.pdf.needTwo);
   }
 
   const merged = await PDFDocument.create();
   const steps = files.length + 1;
 
   for (const [index, file] of files.entries()) {
-    const label = typeof File !== "undefined" && file instanceof File ? file.name : `Datei ${index + 1}`;
-    onProgress?.(index / steps, `Füge „${label}“ hinzu (${index + 1}/${files.length}) …`);
+    const label = typeof File !== "undefined" && file instanceof File ? file.name : active.pdf.fileLabel(index + 1);
+    onProgress?.(index / steps, active.pdf.progress.adding(label, index + 1, files.length));
     const source = await loadPdfLibDocument(file);
     const pages = await merged.copyPages(source, source.getPageIndices());
     for (const page of pages) merged.addPage(page);
@@ -317,34 +327,34 @@ export async function mergePdfs(files: readonly BinarySource[], onProgress?: Pro
   }
 
   if (merged.getPageCount() === 0) {
-    throw new PdfToolError("Die ausgewählten PDFs enthalten keine Seiten.");
+    throw new PdfToolError(active.pdf.mergedEmpty);
   }
 
-  onProgress?.(files.length / steps, "Speichere die zusammengefügte PDF …");
+  onProgress?.(files.length / steps, active.pdf.progress.savingMerged);
   const bytes = await savePdf(merged);
-  onProgress?.(1, "Fertig!");
+  onProgress?.(1, active.pdf.progress.done);
   return bytes;
 }
 
 /* -------------------------------------------------------------------------- */
-/*                       Teilen, Extrahieren & Organisieren                   */
+/*                       Split, extract & organize                            */
 /* -------------------------------------------------------------------------- */
 
 export interface PageInstruction {
-  /** 0-basierter Index der Seite im Quelldokument. */
+  /** 0-based index of the page in the source document. */
   index: number;
-  /** Zusätzliche Drehung im Uhrzeigersinn (Vielfaches von 90). */
+  /** Additional clockwise rotation (multiple of 90). */
   rotation: number;
 }
 
 async function buildDocument(source: PDFDocument, instructions: readonly PageInstruction[]): Promise<Uint8Array> {
   if (instructions.length === 0) {
-    throw new PdfToolError("Es wurden keine Seiten ausgewählt.");
+    throw new PdfToolError(active.pdf.noPagesSelected);
   }
   const pageCount = source.getPageCount();
   for (const { index } of instructions) {
     if (!Number.isInteger(index) || index < 0 || index >= pageCount) {
-      throw new PdfToolError(`Seite ${index + 1} existiert nicht im Dokument.`);
+      throw new PdfToolError(active.pdf.pageMissing(index + 1));
     }
   }
 
@@ -366,26 +376,26 @@ async function buildDocument(source: PDFDocument, instructions: readonly PageIns
   return savePdf(output);
 }
 
-/** Extrahiert ausgewählte Seiten (0-basiert, Reihenfolge bleibt erhalten) in eine neue PDF. */
+/** Extracts selected pages (0-based, order is kept) into a new PDF. */
 export async function extractPages(
   file: BinarySource,
   pageIndices: readonly number[],
   onProgress?: ProgressHandler,
 ): Promise<Uint8Array> {
-  onProgress?.(0.1, "Lese PDF …");
+  onProgress?.(0.1, active.pdf.progress.reading);
   const source = await loadPdfLibDocument(file);
   const unique = Array.from(new Set(pageIndices));
-  onProgress?.(0.4, `Extrahiere ${unique.length} ${unique.length === 1 ? "Seite" : "Seiten"} …`);
+  onProgress?.(0.4, active.pdf.progress.extracting(unique.length));
   const bytes = await buildDocument(
     source,
     unique.map((index) => ({ index, rotation: 0 })),
   );
-  onProgress?.(1, "Fertig!");
+  onProgress?.(1, active.pdf.progress.done);
   return bytes;
 }
 
 /**
- * Teilt eine PDF in mehrere Dokumente. Jede Gruppe (0-basierte Indizes) wird zu einer eigenen Datei.
+ * Splits a PDF into several documents. Every group (0-based indices) becomes its own file.
  */
 export async function splitPdf(
   file: BinarySource,
@@ -395,10 +405,10 @@ export async function splitPdf(
 ): Promise<OutputFile[]> {
   const nonEmpty = groups.filter((group) => group.length > 0);
   if (nonEmpty.length === 0) {
-    throw new PdfToolError("Es wurden keine Seiten zum Teilen ausgewählt.");
+    throw new PdfToolError(active.pdf.noPagesToSplit);
   }
 
-  onProgress?.(0.05, "Lese PDF …");
+  onProgress?.(0.05, active.pdf.progress.reading);
   const source = await loadPdfLibDocument(file);
   const outputs: OutputFile[] = [];
   const usedNames = new Set<string>();
@@ -406,7 +416,7 @@ export async function splitPdf(
   for (const [position, group] of nonEmpty.entries()) {
     onProgress?.(
       0.05 + (position / nonEmpty.length) * 0.9,
-      `Erstelle Datei ${position + 1} von ${nonEmpty.length} …`,
+      active.pdf.progress.creatingFile(position + 1, nonEmpty.length),
     );
     const unique = Array.from(new Set(group));
     const bytes = await buildDocument(
@@ -414,7 +424,9 @@ export async function splitPdf(
       unique.map((index) => ({ index, rotation: 0 })),
     );
     const label =
-      unique.length === 1 ? `seite-${unique[0] + 1}` : `seiten-${formatPageRanges(unique.map((i) => i + 1)).replace(/,\s*/g, "_")}`;
+      unique.length === 1
+        ? `${active.pdf.fileNames.page}-${unique[0] + 1}`
+        : `${active.pdf.fileNames.pages}-${formatPageRanges(unique.map((i) => i + 1)).replace(/,\s*/g, "_")}`;
     let name = `${baseName}-${label}.pdf`;
     let counter = 2;
     while (usedNames.has(name)) {
@@ -426,26 +438,26 @@ export async function splitPdf(
     await yieldToBrowser();
   }
 
-  onProgress?.(1, "Fertig!");
+  onProgress?.(1, active.pdf.progress.done);
   return outputs;
 }
 
-/** Ordnet Seiten neu, dreht sie und entfernt nicht aufgeführte Seiten. */
+/** Reorders and rotates pages and removes pages that aren't listed. */
 export async function organizePdf(
   file: BinarySource,
   instructions: readonly PageInstruction[],
   onProgress?: ProgressHandler,
 ): Promise<Uint8Array> {
-  onProgress?.(0.1, "Lese PDF …");
+  onProgress?.(0.1, active.pdf.progress.reading);
   const source = await loadPdfLibDocument(file);
-  onProgress?.(0.4, `Ordne ${instructions.length} ${instructions.length === 1 ? "Seite" : "Seiten"} an …`);
+  onProgress?.(0.4, active.pdf.progress.arranging(instructions.length));
   const bytes = await buildDocument(source, instructions);
-  onProgress?.(1, "Fertig!");
+  onProgress?.(1, active.pdf.progress.done);
   return bytes;
 }
 
 /* -------------------------------------------------------------------------- */
-/*                                   ZIP-Export                               */
+/*                                 ZIP export                                 */
 /* -------------------------------------------------------------------------- */
 
 export interface ZipEntry {
@@ -453,7 +465,7 @@ export interface ZipEntry {
   data: Uint8Array | Blob;
 }
 
-/** Bündelt mehrere Dateien in ein ZIP-Archiv. */
+/** Bundles several files into a ZIP archive. */
 export async function createZip(entries: readonly ZipEntry[], onProgress?: ProgressHandler): Promise<Blob> {
   const zip = new JSZip();
   const used = new Set<string>();
@@ -469,12 +481,12 @@ export async function createZip(entries: readonly ZipEntry[], onProgress?: Progr
     zip.file(name, entry.data, { binary: true });
   }
   return zip.generateAsync({ type: "blob", compression: "STORE", mimeType: "application/zip" }, (metadata) =>
-    onProgress?.(metadata.percent / 100, "Packe ZIP-Archiv …"),
+    onProgress?.(metadata.percent / 100, active.pdf.progress.packingZip),
   );
 }
 
 /* -------------------------------------------------------------------------- */
-/*                                Canvas-Helfer                               */
+/*                               Canvas helpers                               */
 /* -------------------------------------------------------------------------- */
 
 function createCanvas(width: number, height: number): HTMLCanvasElement {
@@ -487,12 +499,12 @@ function createCanvas(width: number, height: number): HTMLCanvasElement {
 function getContext2d(canvas: HTMLCanvasElement, opaque = true): CanvasRenderingContext2D {
   const context = canvas.getContext("2d", { alpha: !opaque, willReadFrequently: false });
   if (!context) {
-    throw new PdfToolError("Dein Browser konnte keine Zeichenfläche (Canvas) erstellen. Bitte schließe andere Tabs und versuche es erneut.");
+    throw new PdfToolError(active.pdf.canvasFailed);
   }
   return context;
 }
 
-/** Gibt den Speicher eines Canvas sofort frei (wichtig für Safari). */
+/** Releases a canvas' memory immediately (important for Safari). */
 function releaseCanvas(canvas: HTMLCanvasElement): void {
   canvas.width = 0;
   canvas.height = 0;
@@ -503,7 +515,7 @@ function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality?: number)
     canvas.toBlob(
       (blob) => {
         if (blob) resolve(blob);
-        else reject(new PdfToolError("Das Bild konnte nicht erzeugt werden – eventuell ist zu wenig Arbeitsspeicher frei."));
+        else reject(new PdfToolError(active.pdf.imageFailed));
       },
       type,
       quality,
@@ -511,7 +523,7 @@ function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality?: number)
   });
 }
 
-/** Begrenzt den Render-Maßstab, damit Browser-Limits für Canvas-Größen nicht überschritten werden. */
+/** Limits the render scale so browser canvas size limits aren't exceeded. */
 function clampRenderScale(width: number, height: number, requestedScale: number): number {
   let scale = requestedScale;
   const area = width * height * scale * scale;
@@ -519,7 +531,7 @@ function clampRenderScale(width: number, height: number, requestedScale: number)
   return Math.min(scale, MAX_CANVAS_SIDE / width, MAX_CANVAS_SIDE / height);
 }
 
-/** Rendert eine PDF-Seite auf einen weißen Canvas. */
+/** Renders a PDF page onto a white canvas. */
 async function renderPageToCanvas(page: PDFPageProxy, requestedScale: number): Promise<HTMLCanvasElement> {
   const base = page.getViewport({ scale: 1 });
   const scale = clampRenderScale(base.width, base.height, requestedScale);
@@ -546,15 +558,15 @@ function convertToGrayscale(canvas: HTMLCanvasElement): void {
 }
 
 /* -------------------------------------------------------------------------- */
-/*                              Vorschaubilder                                */
+/*                                Thumbnails                                  */
 /* -------------------------------------------------------------------------- */
 
 export interface PageThumbnail {
-  /** Object-URL des Vorschaubilds (vom Aufrufer mit URL.revokeObjectURL freizugeben). */
+  /** Object URL of the thumbnail (the caller releases it with URL.revokeObjectURL). */
   url: string;
-  /** Seitenbreite in PDF-Punkten (inkl. eingebetteter Drehung). */
+  /** Page width in PDF points (including embedded rotation). */
   width: number;
-  /** Seitenhöhe in PDF-Punkten (inkl. eingebetteter Drehung). */
+  /** Page height in PDF points (including embedded rotation). */
   height: number;
 }
 
@@ -578,7 +590,7 @@ export interface RenderThumbnailsOptions {
   onThumbnail: (index: number, thumbnail: PageThumbnail) => void;
 }
 
-/** Rendert nacheinander Vorschaubilder aller Seiten und meldet jede fertige Seite sofort. */
+/** Renders thumbnails of all pages one after another and reports each finished page right away. */
 export async function renderThumbnails(source: BinarySource, options: RenderThumbnailsOptions): Promise<void> {
   const { maxSize = 240, signal, onDocument, onThumbnail } = options;
   const pdf = await openPdfJsDocument(source);
@@ -609,7 +621,7 @@ export interface PdfPreview {
   thumbnail: PageThumbnail | null;
 }
 
-/** Liefert Seitenzahl und Vorschaubild der ersten Seite (für Dateilisten). */
+/** Returns the page count and a thumbnail of the first page (for file lists). */
 export async function getPdfPreview(source: BinarySource, maxSize = 120): Promise<PdfPreview> {
   const pdf = await openPdfJsDocument(source);
   try {
@@ -626,18 +638,18 @@ export async function getPdfPreview(source: BinarySource, maxSize = 120): Promis
 }
 
 /* -------------------------------------------------------------------------- */
-/*                                PDF → Bilder                                */
+/*                                PDF → images                                */
 /* -------------------------------------------------------------------------- */
 
 export type RasterFormat = "png" | "jpeg";
 
 export interface PdfToImagesOptions {
-  /** Auflösung in DPI (72 = Originalgröße). */
+  /** Resolution in DPI (72 = original size). */
   dpi: number;
   format: RasterFormat;
-  /** JPEG-Qualität zwischen 0 und 1. */
+  /** JPEG quality between 0 and 1. */
   quality: number;
-  /** 0-basierte Seiten; leer bzw. undefined = alle Seiten. */
+  /** 0-based pages; empty or undefined = all pages. */
   pageIndices?: readonly number[];
 }
 
@@ -649,21 +661,21 @@ export interface RenderedImage {
   height: number;
 }
 
-/** Rendert PDF-Seiten als PNG oder JPEG in der gewünschten Auflösung. */
+/** Renders PDF pages as PNG or JPEG at the requested resolution. */
 export async function renderPdfToImages(
   file: BinarySource,
   options: PdfToImagesOptions,
   baseName: string,
   onProgress?: ProgressHandler,
 ): Promise<RenderedImage[]> {
-  onProgress?.(0, "Öffne PDF …");
+  onProgress?.(0, active.pdf.progress.opening);
   const pdf = await openPdfJsDocument(file);
   try {
     const indices =
       options.pageIndices && options.pageIndices.length > 0
         ? Array.from(new Set(options.pageIndices)).filter((index) => index >= 0 && index < pdf.numPages)
         : Array.from({ length: pdf.numPages }, (_, index) => index);
-    if (indices.length === 0) throw new PdfToolError("Es wurden keine Seiten ausgewählt.");
+    if (indices.length === 0) throw new PdfToolError(active.pdf.noPagesSelected);
 
     const digits = String(pdf.numPages).length;
     const mime = options.format === "png" ? "image/png" : "image/jpeg";
@@ -671,14 +683,14 @@ export async function renderPdfToImages(
     const results: RenderedImage[] = [];
 
     for (const [position, index] of indices.entries()) {
-      onProgress?.(position / indices.length, `Rendere Seite ${index + 1} (${position + 1}/${indices.length}) …`);
+      onProgress?.(position / indices.length, active.pdf.progress.rendering(index + 1, position + 1, indices.length));
       const page = await pdf.getPage(index + 1);
       try {
         const canvas = await renderPageToCanvas(page, options.dpi / 72);
         try {
           const blob = await canvasToBlob(canvas, mime, options.format === "jpeg" ? clamp(options.quality, 0.1, 1) : undefined);
           results.push({
-            name: `${baseName}-seite-${String(index + 1).padStart(digits, "0")}.${extension}`,
+            name: `${baseName}-${active.pdf.fileNames.page}-${String(index + 1).padStart(digits, "0")}.${extension}`,
             blob,
             pageNumber: index + 1,
             width: canvas.width,
@@ -693,7 +705,7 @@ export async function renderPdfToImages(
       await yieldToBrowser();
     }
 
-    onProgress?.(1, "Fertig!");
+    onProgress?.(1, active.pdf.progress.done);
     return results;
   } finally {
     await pdf.destroy();
@@ -701,7 +713,7 @@ export async function renderPdfToImages(
 }
 
 /* -------------------------------------------------------------------------- */
-/*                                Bilder → PDF                                */
+/*                                Images → PDF                                */
 /* -------------------------------------------------------------------------- */
 
 export type ImagePageSize = "a4" | "letter" | "fit";
@@ -716,7 +728,7 @@ export interface ImagesToPdfOptions {
 
 export interface ImageInput {
   file: File;
-  /** Drehung im Uhrzeigersinn in Grad (0, 90, 180, 270). */
+  /** Clockwise rotation in degrees (0, 90, 180, 270). */
   rotation: number;
 }
 
@@ -761,7 +773,7 @@ interface JpegSegment {
   length: number;
 }
 
-/** Iteriert über die Marker-Segmente einer JPEG-Datei bis zum Bildinhalt (SOS). */
+/** Iterates over the marker segments of a JPEG file up to the image data (SOS). */
 function readJpegSegments(bytes: Uint8Array): JpegSegment[] {
   const segments: JpegSegment[] = [];
   if (!isJpegBytes(bytes)) return segments;
@@ -787,7 +799,7 @@ function readJpegSegments(bytes: Uint8Array): JpegSegment[] {
   return segments;
 }
 
-/** Liest die EXIF-Ausrichtung (1–8) einer JPEG-Datei. */
+/** Reads the EXIF orientation (1–8) of a JPEG file. */
 function readJpegOrientation(bytes: Uint8Array): number {
   try {
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -812,7 +824,7 @@ function readJpegOrientation(bytes: Uint8Array): number {
   return 1;
 }
 
-/** Anzahl der Farbkomponenten laut SOF-Header (1 = Graustufen, 3 = RGB/YCbCr, 4 = CMYK). */
+/** Number of color components from the SOF header (1 = grayscale, 3 = RGB/YCbCr, 4 = CMYK). */
 function readJpegComponents(bytes: Uint8Array): number {
   const sofMarkers = new Set([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf]);
   for (const segment of readJpegSegments(bytes)) {
@@ -823,7 +835,7 @@ function readJpegComponents(bytes: Uint8Array): number {
   return 0;
 }
 
-/** Entfernt EXIF-Segmente, damit der Browser beim Dekodieren nichts automatisch dreht. */
+/** Removes EXIF segments so the browser doesn't auto-rotate while decoding. */
 function stripJpegExif(bytes: Uint8Array): Uint8Array {
   const segments = readJpegSegments(bytes);
   const exif = segments.filter(
@@ -859,14 +871,14 @@ interface DecodedImage {
   close: () => void;
 }
 
-/** Dekodiert ein Bild (inkl. korrekter EXIF-Ausrichtung) – mit Fallback auf <img>. */
+/** Decodes an image (with correct EXIF orientation) – falling back to <img>. */
 async function decodeImage(blob: Blob): Promise<DecodedImage> {
   if (typeof createImageBitmap === "function") {
     try {
       const bitmap = await createImageBitmap(blob, { imageOrientation: "from-image" });
       return { source: bitmap, width: bitmap.width, height: bitmap.height, close: () => bitmap.close() };
     } catch {
-      // Einige Browser unterstützen bestimmte Formate nur über <img> – siehe Fallback unten.
+      // Some browsers only support certain formats via <img> – see the fallback below.
     }
   }
   const url = URL.createObjectURL(blob);
@@ -883,7 +895,7 @@ async function decodeImage(blob: Blob): Promise<DecodedImage> {
     };
   } catch (error) {
     URL.revokeObjectURL(url);
-    throw new PdfToolError("Das Bild konnte nicht gelesen werden. Wird das Format von deinem Browser unterstützt?", {
+    throw new PdfToolError(active.pdf.imageUnreadable, {
       cause: error,
     });
   }
@@ -902,7 +914,7 @@ interface PreparedImage {
   bytes: Uint8Array;
 }
 
-/** Wandelt beliebige Browser-Bildformate über einen Canvas in PNG (mit Transparenz) oder JPEG um. */
+/** Converts any browser image format via canvas into PNG (with transparency) or JPEG. */
 async function rasterizeImage(blob: Blob, forceJpeg: boolean): Promise<PreparedImage> {
   const decoded = await decodeImage(blob);
   try {
@@ -931,7 +943,7 @@ async function rasterizeImage(blob: Blob, forceJpeg: boolean): Promise<PreparedI
   }
 }
 
-/** Bereitet ein Bild für pdf-lib vor: PNG/JPEG direkt (verlustfrei), alles andere über Canvas. */
+/** Prepares an image for pdf-lib: PNG/JPEG directly (lossless), everything else via canvas. */
 async function prepareImageForPdf(file: File): Promise<PreparedImage> {
   const bytes = new Uint8Array(await file.arrayBuffer());
   if (isPngBytes(bytes)) return { kind: "png", bytes };
@@ -944,19 +956,19 @@ async function prepareImageForPdf(file: File): Promise<PreparedImage> {
   return rasterizeImage(file, false);
 }
 
-/** Erstellt aus Bildern (PNG, JPG, WebP, GIF, BMP, AVIF) ein PDF – ein Bild pro Seite. */
+/** Creates a PDF from images (PNG, JPG, WebP, GIF, BMP, AVIF) – one image per page. */
 export async function imagesToPdf(
   images: readonly ImageInput[],
   options: ImagesToPdfOptions,
   onProgress?: ProgressHandler,
 ): Promise<Uint8Array> {
-  if (images.length === 0) throw new PdfToolError("Bitte füge mindestens ein Bild hinzu.");
+  if (images.length === 0) throw new PdfToolError(active.pdf.needImage);
 
   const document = await PDFDocument.create();
   const margin = MARGINS[options.margin];
 
   for (const [position, image] of images.entries()) {
-    onProgress?.(position / (images.length + 1), `Verarbeite „${image.file.name}“ (${position + 1}/${images.length}) …`);
+    onProgress?.(position / (images.length + 1), active.pdf.progress.processingImage(image.file.name, position + 1, images.length));
 
     let prepared = await prepareImageForPdf(image.file);
     let embedded;
@@ -991,7 +1003,7 @@ export async function imagesToPdf(
       scale = Math.min((pageWidth - margin * 2) / displayWidth, (pageHeight - margin * 2) / displayHeight);
     }
 
-    // Die Seite wird im ungedrehten Koordinatensystem aufgebaut und anschließend per /Rotate gedreht.
+    // The page is built in the unrotated coordinate system and then turned via /Rotate.
     const frameWidth = quarterTurn ? pageHeight : pageWidth;
     const frameHeight = quarterTurn ? pageWidth : pageHeight;
     const drawWidth = imageWidth * scale;
@@ -1009,24 +1021,24 @@ export async function imagesToPdf(
     await yieldToBrowser();
   }
 
-  onProgress?.(images.length / (images.length + 1), "Speichere PDF …");
+  onProgress?.(images.length / (images.length + 1), active.pdf.progress.savingPdf);
   document.setTitle(stripExtension(images[0].file.name));
   const bytes = await savePdf(document);
-  onProgress?.(1, "Fertig!");
+  onProgress?.(1, active.pdf.progress.done);
   return bytes;
 }
 
 /* -------------------------------------------------------------------------- */
-/*                                Komprimieren                                */
+/*                                  Compress                                  */
 /* -------------------------------------------------------------------------- */
 
 export type CompressionMode = "smart" | "raster";
 
 export interface CompressOptions {
   mode: CompressionMode;
-  /** Qualität von 10 (kleinste Datei) bis 100 (beste Qualität). */
+  /** Quality from 10 (smallest file) to 100 (best quality). */
   quality: number;
-  /** Nur im Raster-Modus: Seiten in Graustufen umwandeln. */
+  /** Raster mode only: convert pages to grayscale. */
   grayscale: boolean;
 }
 
@@ -1034,9 +1046,9 @@ export interface CompressResult {
   bytes: Uint8Array;
   originalSize: number;
   compressedSize: number;
-  /** Smart-Modus: Anzahl neu komprimierter Bilder. */
+  /** Smart mode: number of recompressed images. */
   optimizedImages: number;
-  /** Smart-Modus: Anzahl gefundener, optimierbarer JPEG-Bilder. */
+  /** Smart mode: number of JPEG images that could be optimized. */
   candidateImages: number;
   pageCount: number;
 }
@@ -1047,7 +1059,7 @@ export interface CompressionSettings {
   maxImageSide: number;
 }
 
-/** Übersetzt den Qualitätsregler (10–100) in konkrete Kompressionsparameter. */
+/** Maps the quality slider (10–100) to concrete compression parameters. */
 export function getCompressionSettings(quality: number): CompressionSettings {
   const q = clamp(quality, 10, 100) / 100;
   return {
@@ -1065,7 +1077,7 @@ function resolveObject(document: PDFDocument, object: PDFObject | undefined): PD
   return object instanceof PDFRef ? document.context.lookup(object) : object;
 }
 
-/** Prüft, ob der Farbraum eines Bildes gefahrlos durch DeviceRGB ersetzt werden kann. */
+/** Checks whether an image's color space can safely be replaced with DeviceRGB. */
 function hasReplaceableColorSpace(document: PDFDocument, dict: PDFDict): boolean {
   const colorSpace = resolveObject(document, dict.get(PDFName.of("ColorSpace")));
   const allowedNames = ["DeviceRGB", "DeviceGray", "CalRGB", "CalGray"];
@@ -1090,7 +1102,7 @@ interface JpegCandidate {
   stream: PDFRawStream;
 }
 
-/** Sucht eingebettete JPEG-Bilder, die sich verlustarm neu komprimieren lassen. */
+/** Finds embedded JPEG images that can be recompressed with little loss. */
 function collectJpegImages(document: PDFDocument): JpegCandidate[] {
   const candidates: JpegCandidate[] = [];
   for (const [ref, object] of document.context.enumerateIndirectObjects()) {
@@ -1160,19 +1172,19 @@ async function recompressJpeg(bytes: Uint8Array, settings: CompressionSettings):
   }
 }
 
-/** Smart: Text & Vektoren bleiben erhalten, nur eingebettete Fotos werden neu komprimiert. */
+/** Smart: text & vectors are kept, only embedded photos are recompressed. */
 async function compressSmart(
   file: BinarySource,
   settings: CompressionSettings,
   onProgress?: ProgressHandler,
 ): Promise<Omit<CompressResult, "originalSize" | "compressedSize">> {
-  onProgress?.(0.02, "Analysiere PDF-Struktur …");
+  onProgress?.(0.02, active.pdf.progress.analyzing);
   const document = await loadPdfLibDocument(file);
   const candidates = collectJpegImages(document);
   let optimizedImages = 0;
 
   for (const [position, { ref, stream }] of candidates.entries()) {
-    onProgress?.(0.05 + (position / Math.max(candidates.length, 1)) * 0.85, `Optimiere Bild ${position + 1} von ${candidates.length} …`);
+    onProgress?.(0.05 + (position / Math.max(candidates.length, 1)) * 0.85, active.pdf.progress.optimizingImage(position + 1, candidates.length));
     const replacement = await recompressJpeg(stream.contents, settings);
     if (replacement && replacement.bytes.length < stream.contents.length * 0.95) {
       const dict = stream.dict.clone(document.context);
@@ -1189,19 +1201,19 @@ async function compressSmart(
     await yieldToBrowser();
   }
 
-  onProgress?.(0.92, "Optimiere Dateistruktur …");
+  onProgress?.(0.92, active.pdf.progress.optimizingStructure);
   const bytes = await savePdf(document);
   return { bytes, optimizedImages, candidateImages: candidates.length, pageCount: document.getPageCount() };
 }
 
-/** Raster: Jede Seite wird als JPEG neu aufgebaut – maximale Ersparnis, Text danach nicht markierbar. */
+/** Raster: every page is rebuilt as a JPEG – maximum savings, text is no longer selectable. */
 async function compressRaster(
   file: BinarySource,
   settings: CompressionSettings,
   grayscale: boolean,
   onProgress?: ProgressHandler,
 ): Promise<Omit<CompressResult, "originalSize" | "compressedSize">> {
-  onProgress?.(0.02, "Öffne PDF …");
+  onProgress?.(0.02, active.pdf.progress.opening);
   const pdf = await openPdfJsDocument(file);
   const output = await PDFDocument.create();
   try {
@@ -1211,7 +1223,7 @@ async function compressRaster(
     if (typeof info.Author === "string" && info.Author) output.setAuthor(info.Author);
 
     for (let index = 0; index < pdf.numPages; index += 1) {
-      onProgress?.(0.02 + (index / pdf.numPages) * 0.9, `Komprimiere Seite ${index + 1} von ${pdf.numPages} …`);
+      onProgress?.(0.02 + (index / pdf.numPages) * 0.9, active.pdf.progress.compressingPage(index + 1, pdf.numPages));
       const page = await pdf.getPage(index + 1);
       try {
         const { width, height } = page.getViewport({ scale: 1 });
@@ -1234,12 +1246,12 @@ async function compressRaster(
     await pdf.destroy();
   }
 
-  onProgress?.(0.94, "Speichere komprimierte PDF …");
+  onProgress?.(0.94, active.pdf.progress.savingCompressed);
   const bytes = await savePdf(output);
   return { bytes, optimizedImages: 0, candidateImages: 0, pageCount: output.getPageCount() };
 }
 
-/** Komprimiert eine PDF clientseitig. */
+/** Compresses a PDF on the client. */
 export async function compressPdf(
   file: File,
   options: CompressOptions,
@@ -1250,7 +1262,7 @@ export async function compressPdf(
     options.mode === "raster"
       ? await compressRaster(file, settings, options.grayscale, onProgress)
       : await compressSmart(file, settings, onProgress);
-  onProgress?.(1, "Fertig!");
+  onProgress?.(1, active.pdf.progress.done);
   return {
     ...result,
     originalSize: file.size,

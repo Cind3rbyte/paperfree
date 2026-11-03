@@ -13,7 +13,7 @@ export interface DragItemProps {
   onDragEnd: () => void;
 }
 
-/** Natives HTML5-Drag-and-Drop zum Umsortieren von Listen und Rastern. */
+/** Native HTML5 drag and drop for reordering lists and grids. */
 export function useDragReorder(onMove: (from: number, to: number) => void) {
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);

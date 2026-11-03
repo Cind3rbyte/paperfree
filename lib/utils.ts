@@ -1,22 +1,22 @@
 type ClassValue = string | false | null | undefined | 0;
 
-/** Verbindet CSS-Klassen und ignoriert leere Werte. */
+/** Joins CSS class names and skips empty values. */
 export function cn(...classes: ClassValue[]): string {
   return classes.filter(Boolean).join(" ");
 }
 
-/** Formatiert Bytes menschenlesbar (z. B. „1,4 MB“). */
-export function formatBytes(bytes: number, decimals = 1): string {
+/** Formats bytes for humans (e.g. "1.4 MB" / "1,4 MB"). */
+export function formatBytes(bytes: number, locale = "en", decimals = 1): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
   const units = ["B", "KB", "MB", "GB", "TB"];
   const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
   const value = bytes / 1024 ** exponent;
-  return `${value.toLocaleString("de-DE", {
+  return `${value.toLocaleString(locale, {
     maximumFractionDigits: exponent === 0 ? 0 : decimals,
   })} ${units[exponent]}`;
 }
 
-/** Startet den Download eines Blobs im Browser – ohne Server-Roundtrip. */
+/** Downloads a blob in the browser – no server round trip. */
 export function downloadBlob(blob: Blob, fileName: string): void {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
@@ -30,12 +30,12 @@ export function downloadBlob(blob: Blob, fileName: string): void {
   window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
-/** Entfernt die Dateiendung („bericht.final.pdf“ → „bericht.final“). */
+/** Removes the file extension ("report.final.pdf" → "report.final"). */
 export function stripExtension(fileName: string): string {
   return fileName.replace(/\.[^./\\]+$/, "");
 }
 
-/** Entfernt Zeichen, die in Dateinamen auf gängigen Betriebssystemen nicht erlaubt sind. */
+/** Removes characters that common operating systems don't allow in file names. */
 export function sanitizeFileName(name: string, fallback: string): string {
   const printable = Array.from(name)
     .filter((char) => char.charCodeAt(0) >= 32)
@@ -48,19 +48,19 @@ export function sanitizeFileName(name: string, fallback: string): string {
   return cleaned || fallback;
 }
 
-/** Stellt sicher, dass ein Dateiname die gewünschte Endung trägt. */
+/** Makes sure a file name ends with the given extension. */
 export function ensureExtension(fileName: string, extension: string): string {
   const normalized = extension.startsWith(".") ? extension : `.${extension}`;
   return fileName.toLowerCase().endsWith(normalized.toLowerCase()) ? fileName : `${fileName}${normalized}`;
 }
 
-/** Erstellt einen bereinigten Dateinamen mit Endung aus einer Benutzereingabe. */
+/** Builds a sanitized file name with extension from user input. */
 export function buildOutputFileName(input: string, fallback: string, extension: string): string {
   const withoutExtension = stripExtension(input.trim()) || fallback;
   return ensureExtension(sanitizeFileName(withoutExtension, fallback), extension);
 }
 
-/** Erzeugt eine eindeutige ID (für Listen-Keys). */
+/** Creates a unique id (for list keys). */
 export function createId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
@@ -68,7 +68,7 @@ export function createId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-/** Verschiebt ein Element innerhalb eines Arrays (immutabel). */
+/** Moves an item within an array (immutably). */
 export function moveItem<T>(list: readonly T[], from: number, to: number): T[] {
   const next = list.slice();
   if (from < 0 || from >= next.length || to < 0 || to >= next.length || from === to) return next;
@@ -77,24 +77,24 @@ export function moveItem<T>(list: readonly T[], from: number, to: number): T[] {
   return next;
 }
 
-/** Gibt dem Browser kurz die Kontrolle zurück, damit Fortschrittsanzeigen neu gezeichnet werden. */
+/** Briefly yields to the browser so progress indicators can repaint. */
 export function yieldToBrowser(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-/** Begrenzt einen Wert auf einen Bereich. */
+/** Clamps a value to a range. */
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-/** Liefert eine lesbare Fehlermeldung aus einem unbekannten Fehlerobjekt. */
-export function getErrorMessage(error: unknown): string {
+/** Returns a readable message for an unknown error value. */
+export function getErrorMessage(error: unknown, fallback = "Unknown error. Please try again."): string {
   if (error instanceof Error && error.message) return error.message;
   if (typeof error === "string" && error) return error;
-  return "Unbekannter Fehler. Bitte versuche es erneut.";
+  return fallback;
 }
 
-/** Prüft, ob eine Datei anhand von MIME-Typ oder Endung zu einer Akzeptanzliste passt. */
+/** Checks whether a file matches an accept list by MIME type or extension. */
 export function matchesAccept(file: File, accept: readonly string[]): boolean {
   if (accept.length === 0) return true;
   const name = file.name.toLowerCase();
@@ -107,5 +107,5 @@ export function matchesAccept(file: File, accept: readonly string[]): boolean {
   });
 }
 
-/** Sortiert Dateinamen „natürlich“ (Seite 2 vor Seite 10). */
-export const naturalCollator = new Intl.Collator("de", { numeric: true, sensitivity: "base" });
+/** Sorts file names "naturally" (page 2 before page 10). */
+export const naturalCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });

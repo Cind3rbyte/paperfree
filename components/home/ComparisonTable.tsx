@@ -1,65 +1,10 @@
 import { Check, Minus, X } from "lucide-react";
+import type { Locale } from "@/lib/i18n/config";
+import { getDictionary } from "@/lib/i18n/dictionaries";
+import type { ComparisonCell } from "@/lib/i18n/types";
 import { cn } from "@/lib/utils";
 
-type Cell = { kind: "yes" | "no" | "partial" | "soon"; text: string };
-
-interface Row {
-  feature: string;
-  paperfree: Cell;
-  acrobat: Cell;
-  ilovepdf: Cell;
-}
-
-const rows: Row[] = [
-  {
-    feature: "Preis",
-    paperfree: { kind: "yes", text: "Kostenlos, für immer" },
-    acrobat: { kind: "no", text: "Abo für den vollen Funktionsumfang" },
-    ilovepdf: { kind: "partial", text: "Gratis mit Limits, Premium kostenpflichtig" },
-  },
-  {
-    feature: "Dateien bleiben auf deinem Gerät",
-    paperfree: { kind: "yes", text: "100 % lokal im Browser" },
-    acrobat: { kind: "partial", text: "Desktop lokal, Online-Tools mit Cloud-Upload" },
-    ilovepdf: { kind: "no", text: "Web-Version lädt auf Server hoch" },
-  },
-  {
-    feature: "Ohne Konto nutzbar",
-    paperfree: { kind: "yes", text: "Ja, ohne Anmeldung" },
-    acrobat: { kind: "partial", text: "Viele Funktionen erfordern ein Konto" },
-    ilovepdf: { kind: "yes", text: "Ja, für Basisfunktionen" },
-  },
-  {
-    feature: "Keine Datei- oder Tageslimits",
-    paperfree: { kind: "yes", text: "Nur durch dein Gerät begrenzt" },
-    acrobat: { kind: "partial", text: "Gratis-Nutzung eingeschränkt" },
-    ilovepdf: { kind: "partial", text: "Gratis-Version mit Limits" },
-  },
-  {
-    feature: "Open Source & selbst hostbar",
-    paperfree: { kind: "yes", text: "MIT-Lizenz, 1-Klick auf Vercel" },
-    acrobat: { kind: "no", text: "Proprietär" },
-    ilovepdf: { kind: "no", text: "Proprietär" },
-  },
-  {
-    feature: "Zusammenfügen, Teilen, Drehen",
-    paperfree: { kind: "yes", text: "Ja" },
-    acrobat: { kind: "yes", text: "Ja" },
-    ilovepdf: { kind: "yes", text: "Ja" },
-  },
-  {
-    feature: "Komprimieren & PDF ↔ Bilder",
-    paperfree: { kind: "yes", text: "Ja" },
-    acrobat: { kind: "yes", text: "Ja" },
-    ilovepdf: { kind: "yes", text: "Ja" },
-  },
-  {
-    feature: "Text bearbeiten, OCR, Signieren",
-    paperfree: { kind: "soon", text: "Auf der Roadmap" },
-    acrobat: { kind: "yes", text: "Ja" },
-    ilovepdf: { kind: "partial", text: "Teilweise (Premium)" },
-  },
-];
+type Cell = ComparisonCell;
 
 function CellContent({ cell, highlight = false }: { cell: Cell; highlight?: boolean }) {
   const icon =
@@ -90,15 +35,16 @@ function CellContent({ cell, highlight = false }: { cell: Cell; highlight?: bool
   );
 }
 
-export function ComparisonTable() {
+export function ComparisonTable({ locale }: { locale: Locale }) {
+  const t = getDictionary(locale).home.comparison;
   return (
     <div className="overflow-x-auto rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
       <table className="w-full min-w-[720px] border-collapse text-left">
-        <caption className="sr-only">Funktionsvergleich: PaperFree, Adobe Acrobat und iLovePDF</caption>
+        <caption className="sr-only">{t.caption}</caption>
         <thead>
           <tr className="border-b border-slate-200 dark:border-slate-800">
             <th scope="col" className="w-1/4 p-4 text-sm font-semibold text-slate-500 dark:text-slate-400">
-              Funktion
+              {t.featureColumn}
             </th>
             <th scope="col" className="w-1/4 bg-indigo-50/70 p-4 dark:bg-indigo-500/10">
               <span className="text-base font-extrabold text-indigo-700 dark:text-indigo-300">PaperFree</span>
@@ -112,7 +58,7 @@ export function ComparisonTable() {
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
+          {t.rows.map((row) => (
             <tr key={row.feature} className="border-b border-slate-100 last:border-0 dark:border-slate-800/70">
               <th scope="row" className="p-4 text-sm font-semibold text-slate-800 dark:text-slate-100">
                 {row.feature}

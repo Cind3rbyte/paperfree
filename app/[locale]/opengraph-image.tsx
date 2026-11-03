@@ -1,11 +1,18 @@
 import { ImageResponse } from "next/og";
+import { isLocale, locales, defaultLocale } from "@/lib/i18n/config";
+import { getDictionary } from "@/lib/i18n/dictionaries";
 
-export const alt = "PaperFree – Kostenlose PDF-Werkzeuge, 100 % lokal im Browser";
+export const alt = "PaperFree";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
-export default function OpengraphImage() {
-  const tools = ["Zusammenfügen", "Teilen", "Drehen", "Komprimieren", "Bilder zu PDF", "PDF zu Bildern"];
+export function generateStaticParams() {
+  return locales.map((locale) => ({ locale }));
+}
+
+export default async function OpengraphImage({ params }: { params: Promise<{ locale: string }> }) {
+  const { locale: requested } = await params;
+  const t = getDictionary(isLocale(requested) ? requested : defaultLocale).og;
   return new ImageResponse(
     (
       <div
@@ -41,13 +48,11 @@ export default function OpengraphImage() {
           </div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-          <div style={{ fontSize: "66px", lineHeight: 1.08, maxWidth: "1000px" }}>
-            Alle PDF-Werkzeuge. Kostenlos. Komplett privat.
-          </div>
-          <div style={{ fontSize: "30px", color: "#cbd5e1" }}>Die quelloffene Alternative zu Adobe Acrobat & iLovePDF.</div>
+          <div style={{ fontSize: "66px", lineHeight: 1.08, maxWidth: "1000px" }}>{t.headline}</div>
+          <div style={{ fontSize: "30px", color: "#cbd5e1" }}>{t.subtitle}</div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: "22px" }}>
-          <div style={{ display: "flex", fontSize: "24px", color: "#94a3b8" }}>{tools.join("  ·  ")}</div>
+          <div style={{ display: "flex", fontSize: "24px", color: "#94a3b8" }}>{t.tools.join("  ·  ")}</div>
           <div
             style={{
               display: "flex",
@@ -61,7 +66,7 @@ export default function OpengraphImage() {
               whiteSpace: "nowrap",
             }}
           >
-            100% Lokal: Deine Dateien verlassen niemals deinen Browser.
+            {t.badge}
           </div>
         </div>
       </div>
